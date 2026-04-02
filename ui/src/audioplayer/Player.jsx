@@ -33,6 +33,7 @@ import { keyMap } from '../hotkeys'
 import keyHandlers from './keyHandlers'
 import { calculateGain } from '../utils/calculateReplayGain'
 import { detectBrowserProfile, decisionService } from '../transcode'
+import { useTabSwitchSeekGuard } from './useTabSwitchSeekGuard'
 
 const Player = () => {
   const theme = useCurrentTheme()
@@ -120,6 +121,7 @@ const Player = () => {
   const gainInfo = useSelector((state) => state.replayGain)
   const [context, setContext] = useState(null)
   const [gainNode, setGainNode] = useState(null)
+  const onAudioSeeked = useTabSwitchSeekGuard(audioInstance)
 
   useEffect(() => {
     if (
@@ -398,6 +400,7 @@ const Player = () => {
         onAudioProgress={onAudioProgress}
         onAudioPlay={onAudioPlay}
         onAudioPlayTrackChange={onAudioPlayTrackChange}
+        onAudioSeeked={onAudioSeeked}
         onAudioPause={onAudioPause}
         onPlayModeChange={(mode) => dispatch(setPlayMode(mode))}
         onAudioEnded={onAudioEnded}
