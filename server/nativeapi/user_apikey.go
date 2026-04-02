@@ -1,6 +1,7 @@
 package nativeapi
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/deluan/rest"
@@ -88,8 +89,8 @@ func authorizeOwnAPIKeyRequest(r *http.Request) (string, error) {
 }
 
 func respondUserAPIKeyError(w http.ResponseWriter, err error) {
-	switch err {
-	case model.ErrNotFound:
+	switch {
+	case errors.Is(err, model.ErrNotFound):
 		http.Error(w, "User not found", http.StatusNotFound)
 	default:
 		http.Error(w, "Internal server error", http.StatusInternalServerError)

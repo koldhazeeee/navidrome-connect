@@ -46,14 +46,6 @@ func newError(code int32, message ...any) error {
 	}
 }
 
-func newErrorWithHelp(code int32, helpURL string, message ...any) error {
-	return subError{
-		code:     code,
-		messages: message,
-		helpURL:  helpURL,
-	}
-}
-
 // errSubsonic and Unwrap are used to allow `errors.Is(err, errSubsonic)` to work
 var errSubsonic = errors.New("subsonic API error")
 
