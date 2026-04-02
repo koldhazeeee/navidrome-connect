@@ -25,6 +25,7 @@ import { Title } from '../common'
 import DeleteUserButton from './DeleteUserButton'
 import { LibrarySelectionField } from './LibrarySelectionField.jsx'
 import { validateUserForm } from './userValidation'
+import { UserAPIKeySection } from './UserAPIKeySection'
 
 const useStyles = makeStyles({
   toolbar: {
@@ -131,7 +132,7 @@ const UserEdit = (props) => {
         />
         <TextInput spellCheck={false} source="email" validate={[email()]} />
         <BooleanInput source="changePassword" />
-        <FormDataConsumer>
+        <FormDataConsumer source="currentPassword">
           {(formDataProps) => (
             <CurrentPasswordInput
               spellCheck={false}
@@ -140,11 +141,12 @@ const UserEdit = (props) => {
             />
           )}
         </FormDataConsumer>
-        <FormDataConsumer>
+        <FormDataConsumer source="password">
           {(formDataProps) => (
             <NewPasswordInput spellCheck={false} {...formDataProps} />
           )}
         </FormDataConsumer>
+        {isMyself && <UserAPIKeySection source="APIKey" userId={props.id} />}
 
         {permissions === 'admin' && (
           <BooleanInput source="isAdmin" initialValue={false} />
@@ -152,7 +154,7 @@ const UserEdit = (props) => {
 
         {/* Conditional Library Selection for Admin Users Only */}
         {permissions === 'admin' && (
-          <FormDataConsumer>
+          <FormDataConsumer source="libraries">
             {({ formData }) => (
               <>
                 {!formData.isAdmin && <LibrarySelectionField />}

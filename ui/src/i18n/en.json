@@ -148,6 +148,7 @@
         "updatedAt": "Updated at",
         "name": "Name",
         "password": "Password",
+        "apiKey": "API Key",
         "createdAt": "Created at",
         "changePassword": "Change Password?",
         "currentPassword": "Current Password",
@@ -155,14 +156,32 @@
         "token": "Token",
         "libraries": "Libraries"
       },
+      "actions": {
+        "generateApiKey": "Generate API Key",
+        "regenerateApiKey": "Regenerate API Key",
+        "revokeApiKey": "Revoke API Key",
+        "unhideApiKey": "Show API Key",
+        "hideApiKey": "Hide API Key"
+      },
       "helperTexts": {
         "name": "Changes to your name will only be reflected on next login",
-        "libraries": "Select specific libraries for this user, or leave empty to use default libraries"
+        "libraries": "Select specific libraries for this user, or leave empty to use default libraries",
+        "apiKey": "This API key stays valid until you revoke it.",
+        "apiKeyHidden": "Your active API key is hidden after creation. Regenerate it to reveal a new key.",
+        "apiKeyMissing": "No active API key. Generate one here or sign in again later."
       },
       "notifications": {
         "created": "User created",
         "updated": "User updated",
-        "deleted": "User deleted"
+        "deleted": "User deleted",
+        "apiKeyGenerated": "API key generated",
+        "apiKeyRegenerated": "API key regenerated",
+        "apiKeyRevoked": "API key revoked",
+        "apiKeyCopied": "API key copied to clipboard",
+        "apiKeyLoadError": "Could not load API key",
+        "apiKeyCopyError": "Could not copy API key",
+        "apiKeyGenerateError": "Could not generate API key",
+        "apiKeyRevokeError": "Could not revoke API key"
       },
       "validation": {
         "librariesRequired": "At least one library must be selected for non-admin users"
@@ -171,7 +190,11 @@
         "listenBrainzToken": "Enter your ListenBrainz user token.",
         "clickHereForToken": "Click here to get your token",
         "selectAllLibraries": "Select all libraries",
-        "adminAutoLibraries": "Admin users automatically have access to all libraries"
+        "adminAutoLibraries": "Admin users automatically have access to all libraries",
+        "apiKeyRevealTitle": "Copy your new API key",
+        "apiKeyRevealMessage": "This is the only time you will be able to view this API key. Click the field below to copy it before closing this dialog.",
+        "apiKeyCopyHint": "Click the API key field to copy it to your clipboard.",
+        "apiKeyCopyFallback": "Copy this API key now:"
       }
     },
     "player": {

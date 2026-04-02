@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 
+	"github.com/navidrome/navidrome/model"
+	"github.com/navidrome/navidrome/model/request"
 	"github.com/navidrome/navidrome/server/subsonic/responses"
 	"github.com/navidrome/navidrome/utils/gg"
 	. "github.com/onsi/ginkgo/v2"
@@ -166,5 +168,21 @@ var _ = Describe("sendResponse", func() {
 		Expect(w.Code).To(Equal(http.StatusOK))
 
 		Expect(pointer).To(Equal(responses.ErrorDataNotFound))
+	})
+})
+
+var _ = Describe("sendError", func() {
+	It("adds an API key help URL for auth errors", func() {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "http://example.com/rest/ping.view?f=json", nil)
+		r = r.WithContext(request.WithUser(r.Context(), model.User{ID: "user-1"}))
+
+		sendError(w, r, newError(responses.ErrorInvalidAPIKey))
+
+		var wrapper responses.JsonWrapper
+		err := json.Unmarshal(w.Body.Bytes(), &wrapper)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(wrapper.Subsonic.Error).ToNot(BeNil())
+		Expect(wrapper.Subsonic.Error.HelpURL).To(Equal("http://example.com/app/#/user/user-1"))
 	})
 })

@@ -66,13 +66,16 @@ func checkRequiredParameters(next http.Handler) http.Handler {
 		var requiredParameters []string
 
 		username, _ := fromInternalOrProxyAuth(r)
+		p := req.Params(r)
+		apiKey, _ := p.String("apiKey")
 		if username != "" {
 			requiredParameters = []string{"v", "c"}
+		} else if apiKey != "" {
+			requiredParameters = []string{"apiKey", "v", "c"}
 		} else {
 			requiredParameters = []string{"u", "v", "c"}
 		}
 
-		p := req.Params(r)
 		for _, param := range requiredParameters {
 			if _, err := p.String(param); err != nil {
 				log.Warn(r, err)
@@ -82,7 +85,9 @@ func checkRequiredParameters(next http.Handler) http.Handler {
 		}
 
 		if username == "" {
-			username, _ = p.String("u")
+			if apiKey == "" {
+				username, _ = p.String("u")
+			}
 		}
 		client, _ := p.String("c")
 		version, _ := p.String("v")
@@ -125,21 +130,45 @@ func authenticate(ds model.DataStore) func(next http.Handler) http.Handler {
 				token, _ := p.String("t")
 				salt, _ := p.String("s")
 				jwt, _ := p.String("jwt")
+				apiKey, _ := p.String("apiKey")
 
-				usr, err = ds.User(ctx).FindByUsernameWithPassword(username)
-				if errors.Is(err, context.Canceled) {
-					log.Debug(ctx, "API: Request canceled when authenticating", "auth", "subsonic", "username", username, "remoteAddr", r.RemoteAddr, err)
+				if apiKey != "" && (username != "" || pass != "" || token != "" || salt != "" || jwt != "") {
+					sendError(w, r, newError(responses.ErrorAuthConflict))
 					return
 				}
-				switch {
-				case errors.Is(err, model.ErrNotFound):
-					log.Warn(ctx, "API: Invalid login", "auth", "subsonic", "username", username, "remoteAddr", r.RemoteAddr, err)
-				case err != nil:
-					log.Error(ctx, "API: Error authenticating username", "auth", "subsonic", "username", username, "remoteAddr", r.RemoteAddr, err)
-				default:
-					err = validateCredentials(usr, pass, token, salt, jwt)
-					if err != nil {
+
+				if apiKey != "" {
+					usr, err = ds.User(ctx).FindByAPIKey(apiKey)
+					if errors.Is(err, context.Canceled) {
+						log.Debug(ctx, "API: Request canceled when authenticating", "auth", "api-key", "remoteAddr", r.RemoteAddr, err)
+						return
+					}
+					switch {
+					case errors.Is(err, model.ErrNotFound):
+						log.Warn(ctx, "API: Invalid login", "auth", "api-key", "remoteAddr", r.RemoteAddr, err)
+						sendError(w, r, newError(responses.ErrorInvalidAPIKey))
+						return
+					case err != nil:
+						log.Error(ctx, "API: Error authenticating API key", "auth", "api-key", "remoteAddr", r.RemoteAddr, err)
+						sendError(w, r, newError(responses.ErrorGeneric))
+						return
+					}
+				} else {
+					usr, err = ds.User(ctx).FindByUsernameWithPassword(username)
+					if errors.Is(err, context.Canceled) {
+						log.Debug(ctx, "API: Request canceled when authenticating", "auth", "subsonic", "username", username, "remoteAddr", r.RemoteAddr, err)
+						return
+					}
+					switch {
+					case errors.Is(err, model.ErrNotFound):
 						log.Warn(ctx, "API: Invalid login", "auth", "subsonic", "username", username, "remoteAddr", r.RemoteAddr, err)
+					case err != nil:
+						log.Error(ctx, "API: Error authenticating username", "auth", "subsonic", "username", username, "remoteAddr", r.RemoteAddr, err)
+					default:
+						err = validateCredentials(usr, pass, token, salt, jwt)
+						if err != nil {
+							log.Warn(ctx, "API: Invalid login", "auth", "subsonic", "username", username, "remoteAddr", r.RemoteAddr, err)
+						}
 					}
 				}
 			}
@@ -149,6 +178,7 @@ func authenticate(ds model.DataStore) func(next http.Handler) http.Handler {
 				return
 			}
 
+			ctx = request.WithUsername(ctx, usr.UserName)
 			ctx = request.WithUser(ctx, *usr)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

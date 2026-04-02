@@ -181,12 +181,14 @@ func buildTestFS() storagetest.FakeFS {
 // createUser creates a user in the database with the given properties, assigns them to the test
 // library, and returns the fully-loaded user (with Libraries populated).
 func createUser(id, username, name string, isAdmin bool) model.User {
+	apiKey := username + "-api-key"
 	user := model.User{
 		ID:          id,
 		UserName:    username,
 		Name:        name,
 		IsAdmin:     isAdmin,
 		NewPassword: "password",
+		NewAPIKey:   apiKey,
 	}
 	Expect(ds.User(ctx).Put(&user)).To(Succeed())
 	Expect(ds.User(ctx).SetUserLibraries(user.ID, []int{lib.ID})).To(Succeed())
@@ -194,6 +196,7 @@ func createUser(id, username, name string, isAdmin bool) model.User {
 	loadedUser, err := ds.User(ctx).FindByUsername(user.UserName)
 	Expect(err).ToNot(HaveOccurred())
 	user.Libraries = loadedUser.Libraries
+	user.APIKey = apiKey
 	return user
 }
 
@@ -206,6 +209,13 @@ func doReq(endpoint string, params ...string) *responses.Subsonic {
 func doReqWithUser(user model.User, endpoint string, params ...string) *responses.Subsonic {
 	w := httptest.NewRecorder()
 	r := buildReq(user, endpoint, params...)
+	router.ServeHTTP(w, r)
+	return parseJSONResponse(w)
+}
+
+func doReqWithAPIKey(apiKey, endpoint string, params ...string) *responses.Subsonic {
+	w := httptest.NewRecorder()
+	r := buildReqWithAPIKey(apiKey, endpoint, params...)
 	router.ServeHTTP(w, r)
 	return parseJSONResponse(w)
 }
@@ -231,6 +241,21 @@ func buildReq(user model.User, endpoint string, params ...string) *http.Request 
 	q := url.Values{}
 	q.Add("u", user.UserName)
 	q.Add("p", "password")
+	q.Add("v", "1.16.1")
+	q.Add("c", "test-client")
+	q.Add("f", "json")
+	for i := 0; i < len(params); i += 2 {
+		q.Add(params[i], params[i+1])
+	}
+	return httptest.NewRequest("GET", "/"+endpoint+"?"+q.Encode(), nil)
+}
+
+func buildReqWithAPIKey(apiKey, endpoint string, params ...string) *http.Request {
+	if len(params)%2 != 0 {
+		panic("buildReqWithAPIKey: odd number of parameters")
+	}
+	q := url.Values{}
+	q.Add("apiKey", apiKey)
 	q.Add("v", "1.16.1")
 	q.Add("c", "test-client")
 	q.Add("f", "json")
@@ -429,11 +454,15 @@ var _ = BeforeSuite(func() {
 
 	adminUserWithPass := adminUser
 	adminUserWithPass.NewPassword = "password"
+	adminUserWithPass.NewAPIKey = "admin-api-key"
 	Expect(initDS.User(ctx).Put(&adminUserWithPass)).To(Succeed())
+	adminUser.APIKey = "admin-api-key"
 
 	regularUserWithPass := regularUser
 	regularUserWithPass.NewPassword = "password"
+	regularUserWithPass.NewAPIKey = "regular-api-key"
 	Expect(initDS.User(ctx).Put(&regularUserWithPass)).To(Succeed())
+	regularUser.APIKey = "regular-api-key"
 
 	lib = model.Library{ID: 1, Name: "Music Library", Path: "fake:///music"}
 	Expect(initDS.Library(ctx).Put(&lib)).To(Succeed())

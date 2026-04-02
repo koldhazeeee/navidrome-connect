@@ -60,6 +60,7 @@ var _ = Describe("Auth", func() {
 				Expect(parsed["name"]).To(Equal("Johndoe"))
 				Expect(parsed["id"]).ToNot(BeEmpty())
 				Expect(parsed["token"]).ToNot(BeEmpty())
+				Expect(parsed["apiKey"]).ToNot(BeEmpty())
 			})
 		})
 
@@ -145,6 +146,7 @@ var _ = Describe("Auth", func() {
 				Expect(parsed["username"]).To(Equal("janedoe"))
 				Expect(parsed["subsonicSalt"]).ToNot(BeEmpty())
 				Expect(parsed["subsonicToken"]).ToNot(BeEmpty())
+				Expect(parsed["apiKey"]).ToNot(BeEmpty())
 				salt := parsed["subsonicSalt"].(string)
 				token := fmt.Sprintf("%x", md5.Sum([]byte("abc123"+salt)))
 				Expect(parsed["subsonicToken"]).To(Equal(token))
@@ -213,6 +215,11 @@ var _ = Describe("Auth", func() {
 				Expect(parsed["name"]).To(Equal("Jane"))
 				Expect(parsed["id"]).ToNot(BeEmpty())
 				Expect(parsed["token"]).ToNot(BeEmpty())
+				Expect(parsed["apiKey"]).ToNot(BeEmpty())
+
+				apiKeyUser, err := ds.User(context.Background()).FindByAPIKey(parsed["apiKey"].(string))
+				Expect(err).ToNot(HaveOccurred())
+				Expect(apiKeyUser.UserName).To(Equal("janedoe"))
 			})
 		})
 	})

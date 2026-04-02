@@ -71,6 +71,12 @@ vi.mock('./DeleteUserButton', () => ({
   default: () => <button data-testid="delete-user-button">Delete</button>,
 }))
 
+vi.mock('./UserAPIKeySection', () => ({
+  UserAPIKeySection: ({ userId }) => (
+    <div data-testid="user-api-key-section">{userId}</div>
+  ),
+}))
+
 vi.mock('../common', () => ({
   Title: ({ subTitle }) => <div data-testid="title">{subTitle}</div>,
 }))
@@ -85,6 +91,10 @@ vi.mock('@material-ui/core', () => ({
 }))
 
 describe('<UserEdit />', () => {
+  beforeEach(() => {
+    localStorage.setItem('userId', 'user1')
+  })
+
   it('should render the user edit form', () => {
     render(<UserEdit id="user1" permissions="admin" />)
 
@@ -126,5 +136,11 @@ describe('<UserEdit />', () => {
     // But should still render name and email
     expect(screen.getByTestId('text-input-name')).toBeInTheDocument()
     expect(screen.getByTestId('text-input-email')).toBeInTheDocument()
+  })
+
+  it('should render the API key section for the current user', () => {
+    render(<UserEdit id="user1" permissions="admin" />)
+
+    expect(screen.getByTestId('user-api-key-section')).toBeInTheDocument()
   })
 })

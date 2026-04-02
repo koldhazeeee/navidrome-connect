@@ -49,6 +49,17 @@ var _ = Describe("System Endpoints", func() {
 			Expect(names).To(ContainElement("transcodeOffset"))
 		})
 
+		It("includes the apiKeyAuthentication extension", func() {
+			resp := doReq("getOpenSubsonicExtensions")
+
+			extensions := *resp.OpenSubsonicExtensions
+			var names []string
+			for _, ext := range extensions {
+				names = append(names, ext.Name)
+			}
+			Expect(names).To(ContainElement("apiKeyAuthentication"))
+		})
+
 		It("includes the formPost extension", func() {
 			resp := doReq("getOpenSubsonicExtensions")
 
@@ -69,6 +80,32 @@ var _ = Describe("System Endpoints", func() {
 				names = append(names, ext.Name)
 			}
 			Expect(names).To(ContainElement("songLyrics"))
+		})
+	})
+
+	Describe("apiKey authentication", func() {
+		It("allows standard endpoints to authenticate with apiKey", func() {
+			resp := doReqWithAPIKey(adminUser.APIKey, "ping")
+
+			Expect(resp.Status).To(Equal(responses.StatusOK))
+		})
+	})
+
+	Describe("tokenInfo", func() {
+		It("returns the username for the authenticated API key", func() {
+			resp := doReqWithAPIKey(adminUser.APIKey, "tokenInfo")
+
+			Expect(resp.Status).To(Equal(responses.StatusOK))
+			Expect(resp.TokenInfo).ToNot(BeNil())
+			Expect(resp.TokenInfo.Username).To(Equal(adminUser.UserName))
+		})
+
+		It("returns invalid API key for unknown keys", func() {
+			resp := doReqWithAPIKey("invalid-api-key", "tokenInfo")
+
+			Expect(resp.Status).To(Equal(responses.StatusFailed))
+			Expect(resp.Error).ToNot(BeNil())
+			Expect(resp.Error.Code).To(Equal(responses.ErrorInvalidAPIKey))
 		})
 	})
 })

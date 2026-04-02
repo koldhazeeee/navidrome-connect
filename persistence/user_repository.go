@@ -3,6 +3,7 @@ package persistence
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -119,6 +120,9 @@ func (r *userRepository) Put(u *model.User) error {
 	if u.NewPassword != "" {
 		_ = r.encryptPassword(u)
 	}
+	if u.NewAPIKey != "" {
+		_ = r.encryptAPIKey(u)
+	}
 	values, err := toSQLArgs(*u)
 	if err != nil {
 		return fmt.Errorf("error converting user to SQL args: %w", err)
@@ -191,7 +195,63 @@ func (r *userRepository) FindByUsernameWithPassword(username string) (*model.Use
 		return nil, err
 	}
 	_ = r.decryptPassword(usr)
+	_ = r.decryptAPIKey(usr)
 	return usr, nil
+}
+
+func (r *userRepository) FindByAPIKey(apiKey string) (*model.User, error) {
+	if apiKey == "" {
+		return nil, model.ErrNotFound
+	}
+	sel := r.selectUserWithLibraries().Where(Eq{"user.api_key_hash": hashAPIKey(apiKey)})
+	var usr dbUser
+	err := r.queryOne(sel, &usr)
+	if err != nil {
+		return nil, err
+	}
+	_ = r.decryptAPIKey(usr.User)
+	return usr.User, nil
+}
+
+func (r *userRepository) GetAPIKey(id string) (string, error) {
+	usr, err := r.Get(id)
+	if err != nil {
+		return "", err
+	}
+	if err := r.decryptAPIKey(usr); err != nil {
+		return "", err
+	}
+	return usr.APIKey, nil
+}
+
+func (r *userRepository) SetAPIKey(id string, apiKey string) error {
+	values := map[string]any{
+		"updated_at": time.Now(),
+	}
+	if apiKey == "" {
+		values["api_key"] = ""
+		values["api_key_hash"] = ""
+	} else {
+		usr := &model.User{
+			ID:        id,
+			NewAPIKey: apiKey,
+		}
+		if err := r.encryptAPIKey(usr); err != nil {
+			return err
+		}
+		values["api_key"] = usr.NewAPIKey
+		values["api_key_hash"] = usr.APIKeyHash
+	}
+
+	update := Update(r.tableName).Where(Eq{"id": id}).SetMap(values)
+	count, err := r.executeSQL(update)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return model.ErrNotFound
+	}
+	return nil
 }
 
 func (r *userRepository) UpdateLastLoginAt(id string) error {
@@ -442,6 +502,37 @@ func (r *userRepository) decryptAllPasswords(users model.Users) error {
 			return err
 		}
 	}
+	return nil
+}
+
+func hashAPIKey(apiKey string) string {
+	sum := sha256.Sum256([]byte(apiKey))
+	return hex.EncodeToString(sum[:])
+}
+
+// encrypts u.NewAPIKey and updates u.APIKeyHash
+func (r *userRepository) encryptAPIKey(u *model.User) error {
+	encAPIKey, err := utils.Encrypt(r.ctx, encKey, u.NewAPIKey)
+	if err != nil {
+		log.Error(r.ctx, "Error encrypting user's API key", "user", u.UserName, err)
+		return err
+	}
+	u.APIKeyHash = hashAPIKey(u.NewAPIKey)
+	u.NewAPIKey = encAPIKey
+	return nil
+}
+
+// decrypts u.APIKey
+func (r *userRepository) decryptAPIKey(u *model.User) error {
+	if u.APIKey == "" {
+		return nil
+	}
+	plaintext, err := utils.Decrypt(r.ctx, encKey, u.APIKey)
+	if err != nil {
+		log.Error(r.ctx, "Error decrypting user's API key", "user", u.UserName, err)
+		return err
+	}
+	u.APIKey = plaintext
 	return nil
 }
 

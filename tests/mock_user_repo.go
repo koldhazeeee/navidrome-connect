@@ -1,7 +1,9 @@
 package tests
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -38,7 +40,13 @@ func (u *MockedUserRepo) Put(usr *model.User) error {
 	if usr.ID == "" {
 		usr.ID = base64.StdEncoding.EncodeToString([]byte(usr.UserName))
 	}
-	usr.Password = usr.NewPassword
+	if usr.NewPassword != "" {
+		usr.Password = usr.NewPassword
+	}
+	if usr.NewAPIKey != "" {
+		usr.APIKey = usr.NewAPIKey
+		usr.APIKeyHash = hashMockAPIKey(usr.NewAPIKey)
+	}
 	u.Data[strings.ToLower(usr.UserName)] = usr
 	return nil
 }
@@ -56,6 +64,45 @@ func (u *MockedUserRepo) FindByUsername(username string) (*model.User, error) {
 
 func (u *MockedUserRepo) FindByUsernameWithPassword(username string) (*model.User, error) {
 	return u.FindByUsername(username)
+}
+
+func (u *MockedUserRepo) FindByAPIKey(apiKey string) (*model.User, error) {
+	if u.Error != nil {
+		return nil, u.Error
+	}
+	apiKeyHash := hashMockAPIKey(apiKey)
+	for _, usr := range u.Data {
+		if usr.APIKeyHash == apiKeyHash {
+			return usr, nil
+		}
+	}
+	return nil, model.ErrNotFound
+}
+
+func (u *MockedUserRepo) GetAPIKey(id string) (string, error) {
+	usr, err := u.Get(id)
+	if err != nil {
+		return "", err
+	}
+	return usr.APIKey, nil
+}
+
+func (u *MockedUserRepo) SetAPIKey(id string, apiKey string) error {
+	if u.Error != nil {
+		return u.Error
+	}
+	for _, usr := range u.Data {
+		if usr.ID == id {
+			usr.APIKey = apiKey
+			if apiKey == "" {
+				usr.APIKeyHash = ""
+			} else {
+				usr.APIKeyHash = hashMockAPIKey(apiKey)
+			}
+			return nil
+		}
+	}
+	return model.ErrNotFound
 }
 
 func (u *MockedUserRepo) Get(id string) (*model.User, error) {
@@ -164,4 +211,9 @@ func (u *MockedUserRepo) Update(id string, entity any, cols ...string) error {
 	usr := entity.(*model.User)
 	usr.ID = id
 	return u.Put(usr)
+}
+
+func hashMockAPIKey(apiKey string) string {
+	sum := sha256.Sum256([]byte(apiKey))
+	return hex.EncodeToString(sum[:])
 }

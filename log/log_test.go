@@ -245,5 +245,9 @@ var _ = Describe("Logger", func() {
 			msg := "getLyrics.view?v=1.2.0&c=iSub&u=user_name&p=first%20and%20other%20words&title=Title"
 			Expect(Redact(msg)).To(Equal("getLyrics.view?v=1.2.0&c=iSub&u=user_name&p=[REDACTED]&title=Title"))
 		})
+		Describe("OpenSubsonic API key", func() {
+			msg := "ping.view?apiKey=super-secret-key&v=1.16.1&c=test"
+			Expect(Redact(msg)).To(Equal("ping.view?apiKey=[REDACTED]&v=1.16.1&c=test"))
+		})
 	})
 })

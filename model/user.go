@@ -19,12 +19,18 @@ type User struct {
 	Libraries Libraries `structs:"-" json:"libraries,omitempty"`
 
 	// This is only available on the backend, and it is never sent over the wire
-	Password string `structs:"-" json:"-"`
+	Password string `structs:"-" json:"-" db:"password"`
 	// This is used to set or change a password when calling Put. If it is empty, the password is not changed.
 	// It is received from the UI with the name "password"
 	NewPassword string `structs:"password,omitempty" json:"password,omitempty"` //nolint:gosec
 	// If changing the password, this is also required
 	CurrentPassword string `structs:"current_password,omitempty" json:"currentPassword,omitempty"`
+	// This is only available on the backend, and it is never sent over the wire
+	APIKey string `structs:"-" json:"-" db:"api_key"`
+	// This is used to set or rotate an API key when calling Put. If it is empty, the API key is not changed.
+	NewAPIKey string `structs:"api_key,omitempty" json:"-"`
+	// This stores the lookup hash for the API key. It is backend-only and never sent over the wire.
+	APIKeyHash string `structs:"api_key_hash,omitempty" json:"-" db:"api_key_hash"`
 }
 
 func (u User) HasLibraryAccess(libraryID int) bool {
@@ -55,6 +61,12 @@ type UserRepository interface {
 	FindByUsername(username string) (*User, error)
 	// FindByUsernameWithPassword is the same as above, but also returns the decrypted password
 	FindByUsernameWithPassword(username string) (*User, error)
+	// FindByAPIKey returns the user associated with the given API key.
+	FindByAPIKey(apiKey string) (*User, error)
+	// GetAPIKey returns the decrypted API key for the given user ID.
+	GetAPIKey(id string) (string, error)
+	// SetAPIKey updates the API key for the given user ID. Passing an empty key revokes it.
+	SetAPIKey(id string, apiKey string) error
 
 	// Library association methods
 	GetUserLibraries(userID string) (Libraries, error)

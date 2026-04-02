@@ -47,7 +47,8 @@ func login(ds model.DataStore) func(w http.ResponseWriter, r *http.Request) {
 }
 
 func doLogin(ds model.DataStore, username string, password string, w http.ResponseWriter, r *http.Request) {
-	user, err := validateLogin(ds.User(r.Context()), username, password)
+	userRepo := ds.User(r.Context())
+	user, err := validateLogin(userRepo, username, password)
 	if err != nil {
 		_ = rest.RespondWithError(w, http.StatusInternalServerError, "Unknown error authentication user. Please try again")
 		return
@@ -60,6 +61,10 @@ func doLogin(ds model.DataStore, username string, password string, w http.Respon
 
 	tokenString, err := auth.CreateToken(user)
 	if err != nil {
+		_ = rest.RespondWithError(w, http.StatusInternalServerError, "Unknown error authenticating user. Please try again")
+		return
+	}
+	if err := ensureAPIKey(userRepo, user); err != nil {
 		_ = rest.RespondWithError(w, http.StatusInternalServerError, "Unknown error authenticating user. Please try again")
 		return
 	}
@@ -90,6 +95,9 @@ func buildAuthPayload(user *model.User) map[string]any {
 
 	subsonicToken := md5.Sum([]byte(user.Password + subsonicSalt))
 	payload["subsonicToken"] = hex.EncodeToString(subsonicToken[:])
+	if user.APIKey != "" {
+		payload["apiKey"] = user.APIKey
+	}
 
 	return payload
 }
@@ -334,8 +342,24 @@ func handleLoginFromHeaders(ds model.DataStore, r *http.Request) map[string]any 
 		log.Error(r, "Could not update LastLoginAt", "user", username, err)
 		return nil
 	}
+	if err := ensureAPIKey(userRepo, user); err != nil {
+		log.Error(r, "Could not create API key for user", "user", username, err)
+		return nil
+	}
 
 	return buildAuthPayload(user)
+}
+
+func ensureAPIKey(userRepo model.UserRepository, user *model.User) error {
+	if user.APIKey != "" {
+		return nil
+	}
+	rawAPIKey := id.NewRandom()
+	if err := userRepo.SetAPIKey(user.ID, rawAPIKey); err != nil {
+		return err
+	}
+	user.APIKey = rawAPIKey
+	return nil
 }
 
 func validateIPAgainstList(ip string, comaSeparatedList string) bool {

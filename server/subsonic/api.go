@@ -166,6 +166,7 @@ func (api *Router) routes() http.Handler {
 			r.Use(getPlayer(api.players))
 			h(r, "getUser", api.GetUser)
 			h(r, "getUsers", api.GetUsers)
+			h(r, "tokenInfo", api.TokenInfo)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(getPlayer(api.players))
@@ -313,7 +314,14 @@ func sendError(w http.ResponseWriter, r *http.Request, err error) {
 	subErr := mapToSubsonicError(err)
 	response := newResponse()
 	response.Status = responses.StatusFailed
-	response.Error = &responses.Error{Code: subErr.code, Message: subErr.Error()}
+	helpURL := subErr.helpURL
+	if helpURL == "" {
+		switch subErr.code {
+		case responses.ErrorTokenAuthLDAP, responses.ErrorAuthNotSupported, responses.ErrorAuthConflict, responses.ErrorInvalidAPIKey:
+			helpURL = apiKeyHelpURL(r)
+		}
+	}
+	response.Error = &responses.Error{Code: subErr.code, Message: subErr.Error(), HelpURL: helpURL}
 
 	sendResponse(w, r, response)
 }

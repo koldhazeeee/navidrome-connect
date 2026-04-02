@@ -115,6 +115,21 @@ var _ = Describe("Middlewares", func() {
 			Expect(next.called).To(BeTrue())
 		})
 
+		It("passes when all required params are available (api key auth case)", func() {
+			r := newGetRequest("apiKey=admin-api-key", "v=1.15", "c=test")
+			cp := checkRequiredParameters(next)
+			cp.ServeHTTP(w, r)
+
+			username, _ := request.UsernameFrom(next.req.Context())
+			Expect(username).To(BeEmpty())
+			version, _ := request.VersionFrom(next.req.Context())
+			Expect(version).To(Equal("1.15"))
+			client, _ := request.ClientFrom(next.req.Context())
+			Expect(client).To(Equal("test"))
+
+			Expect(next.called).To(BeTrue())
+		})
+
 		It("fails when user is missing", func() {
 			r := newGetRequest("v=1.15", "c=test")
 			cp := checkRequiredParameters(next)
@@ -149,6 +164,7 @@ var _ = Describe("Middlewares", func() {
 			_ = ur.Put(&model.User{
 				UserName:    "admin",
 				NewPassword: "wordpass",
+				NewAPIKey:   "admin-api-key",
 			})
 		})
 
@@ -303,6 +319,38 @@ var _ = Describe("Middlewares", func() {
 
 				// Internal auth requires the context, so this should fail
 				Expect(w.Body.String()).To(ContainSubstring(`code="40"`))
+				Expect(next.called).To(BeFalse())
+			})
+		})
+
+		When("using API key authentication", func() {
+			It("passes authentication with correct API key", func() {
+				r := newGetRequest("apiKey=admin-api-key")
+				cp := authenticate(ds)(next)
+				cp.ServeHTTP(w, r)
+
+				Expect(next.called).To(BeTrue())
+				user, _ := request.UserFrom(next.req.Context())
+				Expect(user.UserName).To(Equal("admin"))
+				username, _ := request.UsernameFrom(next.req.Context())
+				Expect(username).To(Equal("admin"))
+			})
+
+			It("fails authentication with invalid API key", func() {
+				r := newGetRequest("apiKey=INVALID")
+				cp := authenticate(ds)(next)
+				cp.ServeHTTP(w, r)
+
+				Expect(w.Body.String()).To(ContainSubstring(`code="44"`))
+				Expect(next.called).To(BeFalse())
+			})
+
+			It("fails authentication when API key conflicts with other auth params", func() {
+				r := newGetRequest("apiKey=admin-api-key", "u=admin", "p=wordpass")
+				cp := authenticate(ds)(next)
+				cp.ServeHTTP(w, r)
+
+				Expect(w.Body.String()).To(ContainSubstring(`code="43"`))
 				Expect(next.called).To(BeFalse())
 			})
 		})

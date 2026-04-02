@@ -35,7 +35,8 @@ var _ = Describe("GetOpenSubsonicExtensions", func() {
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(*response.Subsonic.OpenSubsonicExtensions).To(SatisfyAll(
-			HaveLen(5),
+			HaveLen(6),
+			ContainElement(responses.OpenSubsonicExtension{Name: "apiKeyAuthentication", Versions: []int32{1}}),
 			ContainElement(responses.OpenSubsonicExtension{Name: "transcodeOffset", Versions: []int32{1}}),
 			ContainElement(responses.OpenSubsonicExtension{Name: "formPost", Versions: []int32{1}}),
 			ContainElement(responses.OpenSubsonicExtension{Name: "songLyrics", Versions: []int32{1}}),

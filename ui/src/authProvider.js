@@ -14,6 +14,42 @@ if (config.auth) {
   }
 }
 
+const tokenInfoUrl = (apiKey) => {
+  const params = new URLSearchParams({
+    apiKey,
+    v: '1.16.1',
+    c: 'NavidromeUI',
+    f: 'json',
+  })
+  return baseUrl(`/rest/tokenInfo.view?${params.toString()}`)
+}
+
+const verifyApiKey = (authInfo) => {
+  if (!authInfo.apiKey) {
+    return Promise.resolve(authInfo)
+  }
+
+  return fetch(tokenInfoUrl(authInfo.apiKey), {
+    headers: new Headers({ Accept: 'application/json' }),
+  })
+    .then((response) => {
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(response.statusText)
+      }
+      return response.json()
+    })
+    .then((response) => {
+      const subsonicResponse = response['subsonic-response']
+      if (
+        subsonicResponse?.status !== 'ok' ||
+        subsonicResponse?.tokenInfo?.username !== authInfo.username
+      ) {
+        throw new Error('tokenInfo verification failed')
+      }
+      return authInfo
+    })
+}
+
 function storeAuthenticationInfo(authInfo) {
   authInfo.token && localStorage.setItem('token', authInfo.token)
   localStorage.setItem('userId', authInfo.id)
@@ -21,6 +57,7 @@ function storeAuthenticationInfo(authInfo) {
   localStorage.setItem('username', authInfo.username)
   authInfo.avatar && localStorage.setItem('avatar', authInfo.avatar)
   localStorage.setItem('role', authInfo.isAdmin ? 'admin' : 'regular')
+  authInfo.apiKey && localStorage.setItem('apiKey', authInfo.apiKey)
   localStorage.setItem('subsonic-salt', authInfo.subsonicSalt)
   localStorage.setItem('subsonic-token', authInfo.subsonicToken)
   localStorage.setItem('is-authenticated', 'true')
@@ -46,6 +83,9 @@ const authProvider = {
       })
       .then((response) => {
         jwtDecode(response.token) // Validate token
+        return verifyApiKey(response)
+      })
+      .then((response) => {
         storeAuthenticationInfo(response)
         // Avoid "going to create admin" dialog after logout/login without a refresh
         config.firstTime = false
@@ -107,6 +147,7 @@ const removeItems = () => {
   localStorage.removeItem('username')
   localStorage.removeItem('avatar')
   localStorage.removeItem('role')
+  localStorage.removeItem('apiKey')
   localStorage.removeItem('subsonic-salt')
   localStorage.removeItem('subsonic-token')
   localStorage.removeItem('is-authenticated')

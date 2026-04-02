@@ -59,6 +59,7 @@ type Subsonic struct {
 
 	// OpenSubsonic extensions
 	OpenSubsonicExtensions *OpenSubsonicExtensions `xml:"openSubsonicExtensions,omitempty"  json:"openSubsonicExtensions,omitempty"`
+	TokenInfo              *TokenInfo              `xml:"tokenInfo,omitempty"                json:"tokenInfo,omitempty"`
 	LyricsList             *LyricsList             `xml:"lyricsList,omitempty"              json:"lyricsList,omitempty"`
 	PlayQueueByIndex       *PlayQueueByIndex       `xml:"playQueueByIndex,omitempty" json:"playQueueByIndex,omitempty"`
 	TranscodeDecision      *TranscodeDecision      `xml:"transcodeDecision,omitempty"       json:"transcodeDecision,omitempty"`
@@ -76,6 +77,7 @@ type JsonWrapper struct {
 type Error struct {
 	Code    int32  `xml:"code,attr"                      json:"code"`
 	Message string `xml:"message,attr"                   json:"message"`
+	HelpURL string `xml:"helpUrl,attr,omitempty"         json:"helpUrl,omitempty"`
 }
 
 type License struct {
@@ -389,6 +391,10 @@ type User struct {
 
 type Users struct {
 	User []User `xml:"user"  json:"user"`
+}
+
+type TokenInfo struct {
+	Username string `xml:"username,attr"               json:"username"`
 }
 
 type Genre struct {

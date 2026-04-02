@@ -44,6 +44,7 @@ var redacted = &Hook{
 		"([^\\w]s=)[^&]+",
 		"([^\\w]p=)[^&]+",
 		"([^\\w]jwt=)[^&]+",
+		"([^\\w]apiKey=)[^&]+",
 
 		// External services query params
 		"([^\\w]api_key=)[\\w]+",

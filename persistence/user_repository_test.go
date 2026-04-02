@@ -30,6 +30,7 @@ var _ = Describe("UserRepository", func() {
 			Name:        "Admin",
 			Email:       "admin@admin.com",
 			NewPassword: "wordpass",
+			NewAPIKey:   "admin-api-key",
 			IsAdmin:     true,
 		}
 		It("saves the user to the DB", func() {
@@ -50,24 +51,70 @@ var _ = Describe("UserRepository", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(actual.Name).To(Equal("Admin"))
 			Expect(actual.Password).To(Equal("wordpass"))
+			Expect(actual.APIKey).To(Equal("admin-api-key"))
+		})
+		It("find the user by API key", func() {
+			actual, err := repo.FindByAPIKey("admin-api-key")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(actual.Name).To(Equal("Admin"))
+			Expect(actual.UserName).To(Equal("AdMiN"))
+		})
+		It("gets the decrypted API key by user ID", func() {
+			actual, err := repo.GetAPIKey("123")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(actual).To(Equal("admin-api-key"))
 		})
 		It("updates the name and keep the same password", func() {
 			usr.Name = "Jane Doe"
 			usr.NewPassword = ""
+			usr.NewAPIKey = ""
 			Expect(repo.Put(&usr)).To(BeNil())
 
 			actual, err := repo.FindByUsernameWithPassword("admin")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(actual.Name).To(Equal("Jane Doe"))
 			Expect(actual.Password).To(Equal("wordpass"))
+			Expect(actual.APIKey).To(Equal("admin-api-key"))
 		})
 		It("updates password if specified", func() {
 			usr.NewPassword = "newpass"
+			usr.NewAPIKey = ""
 			Expect(repo.Put(&usr)).To(BeNil())
 
 			actual, err := repo.FindByUsernameWithPassword("admin")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(actual.Password).To(Equal("newpass"))
+		})
+		It("updates the API key if specified", func() {
+			usr.NewAPIKey = "rotated-api-key"
+			Expect(repo.Put(&usr)).To(BeNil())
+
+			actual, err := repo.FindByUsernameWithPassword("admin")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(actual.APIKey).To(Equal("rotated-api-key"))
+
+			_, err = repo.FindByAPIKey("admin-api-key")
+			Expect(err).To(MatchError(model.ErrNotFound))
+
+			actual, err = repo.FindByAPIKey("rotated-api-key")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(actual.UserName).To(Equal("AdMiN"))
+		})
+		It("sets and revokes the API key directly", func() {
+			Expect(repo.SetAPIKey("123", "rotated-api-key")).To(Succeed())
+
+			actual, err := repo.GetAPIKey("123")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(actual).To(Equal("rotated-api-key"))
+
+			Expect(repo.SetAPIKey("123", "")).To(Succeed())
+
+			actual, err = repo.GetAPIKey("123")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(actual).To(BeEmpty())
+
+			_, err = repo.FindByAPIKey("rotated-api-key")
+			Expect(err).To(MatchError(model.ErrNotFound))
 		})
 	})
 

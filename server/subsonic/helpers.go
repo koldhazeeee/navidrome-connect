@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -35,12 +36,21 @@ func newResponse() *responses.Subsonic {
 type subError struct {
 	code     int32
 	messages []any
+	helpURL  string
 }
 
 func newError(code int32, message ...any) error {
 	return subError{
 		code:     code,
 		messages: message,
+	}
+}
+
+func newErrorWithHelp(code int32, helpURL string, message ...any) error {
+	return subError{
+		code:     code,
+		messages: message,
+		helpURL:  helpURL,
 	}
 }
 
@@ -77,6 +87,15 @@ func sortName(sortName, orderName string) string {
 		)
 	}
 	return orderName
+}
+
+func apiKeyHelpURL(r *http.Request) string {
+	base := strings.TrimRight(publicurl.AbsoluteURL(r, consts.URLPathUI, nil), "/")
+	user, ok := request.UserFrom(r.Context())
+	if !ok || user.ID == "" {
+		return base + "/"
+	}
+	return fmt.Sprintf("%s/#/user/%s", base, url.PathEscape(user.ID))
 }
 
 func getArtistAlbumCount(a *model.Artist) int32 {
