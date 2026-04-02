@@ -211,15 +211,22 @@ func (api *Router) GetNowPlaying(r *http.Request) (*responses.Subsonic, error) {
 
 	response := newResponse()
 	response.NowPlaying = &responses.NowPlaying{}
+	now := time.Now()
 	var i int32
 	response.NowPlaying.Entry = slice.Map(npInfo, func(np scrobbler.NowPlayingInfo) responses.NowPlayingEntry {
-		return responses.NowPlayingEntry{
+		entry := responses.NowPlayingEntry{
 			Child:      childFromMediaFile(ctx, np.MediaFile),
 			UserName:   np.Username,
 			MinutesAgo: int32(time.Since(np.Start).Minutes()),
 			PlayerId:   i + 1, // Fake numeric playerId, it does not seem to be used for anything
 			PlayerName: np.PlayerName,
 		}
+		if np.State != "" {
+			entry.State = string(np.State)
+		}
+		entry.PositionMs = np.CurrentPositionMs(now)
+		entry.PlaybackRate = np.PlaybackRate
+		return entry
 	})
 	return response, nil
 }

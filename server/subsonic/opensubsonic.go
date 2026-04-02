@@ -15,6 +15,7 @@ func (api *Router) GetOpenSubsonicExtensions(_ *http.Request) (*responses.Subson
 		{Name: "songLyrics", Versions: []int32{1}},
 		{Name: "indexBasedQueue", Versions: []int32{1}},
 		{Name: "transcoding", Versions: []int32{1}},
+		{Name: "playbackReport", Versions: []int32{1}},
 	}
 	return response, nil
 }

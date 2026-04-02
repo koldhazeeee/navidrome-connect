@@ -152,6 +152,11 @@ var _ = Describe("PlayTracker", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(playing).To(HaveLen(1))
 			Expect(playing[0].Position).To(Equal(pos))
+			Expect(playing[0].State).To(Equal(PlaybackStatePlaying))
+			Expect(playing[0].PositionMs).ToNot(BeNil())
+			Expect(*playing[0].PositionMs).To(Equal(int64(pos * 1000)))
+			Expect(playing[0].PlaybackRate).ToNot(BeNil())
+			Expect(*playing[0].PlaybackRate).To(Equal(1.0))
 		})
 
 		It("sends event with count", func() {
@@ -180,6 +185,131 @@ var _ = Describe("PlayTracker", func() {
 			Eventually(func() bool { return fake.GetNowPlayingCalled() }).Should(BeTrue())
 			// Verify the username was passed through async dispatch via context
 			Eventually(func() string { return fake.GetUsername() }).Should(Equal("testuser"))
+		})
+	})
+
+	Describe("ReportPlayback", func() {
+		It("stores playback timeline and calculates the current position", func() {
+			err := tracker.ReportPlayback(ctx, PlaybackReport{
+				TrackID:        "123",
+				PlayerID:       "player-1",
+				PlayerName:     "player-one",
+				PositionMs:     2000,
+				State:          PlaybackStatePlaying,
+				PlaybackRate:   2.0,
+				IgnoreScrobble: true,
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			Eventually(func() int64 {
+				playing, err := tracker.GetNowPlaying(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(playing).To(HaveLen(1))
+				Expect(playing[0].State).To(Equal(PlaybackStatePlaying))
+				Expect(playing[0].PlaybackRate).ToNot(BeNil())
+				positionMs := playing[0].CurrentPositionMs(time.Now())
+				Expect(positionMs).ToNot(BeNil())
+				return *positionMs
+			}).Should(BeNumerically(">", 2000))
+		})
+
+		It("does not advance position while paused", func() {
+			err := tracker.ReportPlayback(ctx, PlaybackReport{
+				TrackID:        "123",
+				PlayerID:       "player-1",
+				PlayerName:     "player-one",
+				PositionMs:     3000,
+				State:          PlaybackStatePaused,
+				PlaybackRate:   1.5,
+				IgnoreScrobble: true,
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			time.Sleep(20 * time.Millisecond)
+
+			playing, err := tracker.GetNowPlaying(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(playing).To(HaveLen(1))
+			positionMs := playing[0].CurrentPositionMs(time.Now())
+			Expect(positionMs).ToNot(BeNil())
+			Expect(*positionMs).To(Equal(int64(3000)))
+		})
+
+		It("submits a play when a stopped session crosses the scrobble threshold", func() {
+			err := tracker.ReportPlayback(ctx, PlaybackReport{
+				TrackID:      "123",
+				PlayerID:     "player-1",
+				PlayerName:   "player-one",
+				PositionMs:   1000,
+				State:        PlaybackStateStarting,
+				PlaybackRate: 1.0,
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			err = tracker.ReportPlayback(ctx, PlaybackReport{
+				TrackID:      "123",
+				PlayerID:     "player-1",
+				PlayerName:   "player-one",
+				PositionMs:   91000,
+				State:        PlaybackStateStopped,
+				PlaybackRate: 1.0,
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(track.PlayCount).To(Equal(int64(1)))
+			Expect(album.PlayCount).To(Equal(int64(1)))
+			Expect(fake.ScrobbleCalled.Load()).To(BeTrue())
+		})
+
+		It("does not submit a play when ignoreScrobble is set", func() {
+			err := tracker.ReportPlayback(ctx, PlaybackReport{
+				TrackID:      "123",
+				PlayerID:     "player-1",
+				PlayerName:   "player-one",
+				PositionMs:   1000,
+				State:        PlaybackStateStarting,
+				PlaybackRate: 1.0,
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			err = tracker.ReportPlayback(ctx, PlaybackReport{
+				TrackID:        "123",
+				PlayerID:       "player-1",
+				PlayerName:     "player-one",
+				PositionMs:     91000,
+				State:          PlaybackStateStopped,
+				PlaybackRate:   1.0,
+				IgnoreScrobble: true,
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(track.PlayCount).To(BeZero())
+			Expect(album.PlayCount).To(BeZero())
+			Expect(fake.ScrobbleCalled.Load()).To(BeFalse())
+		})
+
+		It("does not submit the same stopped session twice", func() {
+			err := tracker.ReportPlayback(ctx, PlaybackReport{
+				TrackID:      "123",
+				PlayerID:     "player-1",
+				PlayerName:   "player-one",
+				PositionMs:   1000,
+				State:        PlaybackStateStarting,
+				PlaybackRate: 1.0,
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			stopReport := PlaybackReport{
+				TrackID:      "123",
+				PlayerID:     "player-1",
+				PlayerName:   "player-one",
+				PositionMs:   91000,
+				State:        PlaybackStateStopped,
+				PlaybackRate: 1.0,
+			}
+			Expect(tracker.ReportPlayback(ctx, stopReport)).To(Succeed())
+			Expect(tracker.ReportPlayback(ctx, stopReport)).To(Succeed())
+
+			Expect(track.PlayCount).To(Equal(int64(1)))
+			Expect(album.PlayCount).To(Equal(int64(1)))
 		})
 	})
 

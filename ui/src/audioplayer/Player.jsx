@@ -110,6 +110,7 @@ const Player = () => {
 
   const visible = authenticated && playerState.queue.length > 0
   const isRadio = playerState.current?.isRadio || false
+  const currentTrack = playerState.current
   const classes = useStyle({
     isRadio,
     visible,
@@ -121,7 +122,15 @@ const Player = () => {
   const gainInfo = useSelector((state) => state.replayGain)
   const [context, setContext] = useState(null)
   const [gainNode, setGainNode] = useState(null)
-  const onAudioSeeked = useTabSwitchSeekGuard(audioInstance)
+  const restoreSeekedPosition = useTabSwitchSeekGuard(audioInstance)
+
+  const reportPlayback = useCallback((trackId, currentTime, state) => {
+    if (!trackId) {
+      return
+    }
+    const positionMs = Math.max(Math.floor((currentTime ?? 0) * 1000), 0)
+    subsonic.reportPlayback(trackId, positionMs, state, 1.0, true)
+  }, [])
 
   useEffect(() => {
     if (
@@ -290,8 +299,7 @@ const Player = () => {
         const song = info.song
         document.title = `${song.title} - ${song.artist} - Navidrome`
         if (!info.isRadio) {
-          const pos = startTime === null ? null : Math.floor(info.currentTime)
-          subsonic.nowPlaying(info.trackId, pos)
+          reportPlayback(info.trackId, info.currentTime, 'playing')
         }
         setPreload(false)
         if (config.gaTrackingId) {
@@ -310,34 +318,61 @@ const Player = () => {
         }
       }
     },
-    [context, dispatch, showNotifications, startTime],
+    [context, dispatch, reportPlayback, showNotifications, startTime],
   )
 
+  const onAudioSeeked = useCallback(() => {
+    restoreSeekedPosition()
+    if (!currentTrack?.isRadio && currentTrack?.trackId && audioInstance) {
+      reportPlayback(
+        currentTrack.trackId,
+        audioInstance.currentTime,
+        audioInstance.paused ? 'paused' : 'playing',
+      )
+    }
+  }, [audioInstance, currentTrack, reportPlayback, restoreSeekedPosition])
+
   const onAudioPlayTrackChange = useCallback(() => {
+    if (
+      startTime !== null &&
+      currentTrack?.trackId &&
+      audioInstance &&
+      !currentTrack.isRadio
+    ) {
+      reportPlayback(currentTrack.trackId, audioInstance.currentTime, 'stopped')
+    }
     if (scrobbled) {
       setScrobbled(false)
     }
     if (startTime !== null) {
       setStartTime(null)
     }
-  }, [scrobbled, startTime])
+  }, [audioInstance, currentTrack, reportPlayback, scrobbled, startTime])
 
   const onAudioPause = useCallback(
-    (info) => dispatch(currentPlaying(info)),
-    [dispatch],
+    (info) => {
+      dispatch(currentPlaying(info))
+      if (!info.isRadio) {
+        reportPlayback(info.trackId, info.currentTime, 'paused')
+      }
+    },
+    [dispatch, reportPlayback],
   )
 
   const onAudioEnded = useCallback(
     (currentPlayId, audioLists, info) => {
       setScrobbled(false)
       setStartTime(null)
+      if (!info.isRadio) {
+        reportPlayback(info.trackId, info.currentTime, 'stopped')
+      }
       dispatch(currentPlaying(info))
       dataProvider
         .getOne('keepalive', { id: info.trackId })
         // eslint-disable-next-line no-console
         .catch((e) => console.log('Keepalive error:', e))
     },
-    [dispatch, dataProvider],
+    [dispatch, dataProvider, reportPlayback],
   )
 
   const onCoverClick = useCallback((mode, audioLists, audioInfo) => {

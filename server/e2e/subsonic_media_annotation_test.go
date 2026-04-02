@@ -157,4 +157,36 @@ var _ = Describe("Media Annotation Endpoints", Ordered, func() {
 			Expect(resp.Error).ToNot(BeNil())
 		})
 	})
+
+	Describe("ReportPlayback", func() {
+		It("accepts a playback report for a song", func() {
+			songs, err := ds.MediaFile(ctx).GetAll(model.QueryOptions{Max: 1, Sort: "title"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(songs).ToNot(BeEmpty())
+
+			resp := doReq("reportPlayback",
+				"mediaId", songs[0].ID,
+				"mediaType", "song",
+				"positionMs", "120000",
+				"state", "playing",
+			)
+
+			Expect(resp.Status).To(Equal(responses.StatusOK))
+		})
+
+		It("returns an error when positionMs is missing", func() {
+			songs, err := ds.MediaFile(ctx).GetAll(model.QueryOptions{Max: 1, Sort: "title"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(songs).ToNot(BeEmpty())
+
+			resp := doReq("reportPlayback",
+				"mediaId", songs[0].ID,
+				"mediaType", "song",
+				"state", "playing",
+			)
+
+			Expect(resp.Status).To(Equal(responses.StatusFailed))
+			Expect(resp.Error).ToNot(BeNil())
+		})
+	})
 })

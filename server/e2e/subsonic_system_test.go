@@ -81,6 +81,17 @@ var _ = Describe("System Endpoints", func() {
 			}
 			Expect(names).To(ContainElement("songLyrics"))
 		})
+
+		It("includes the playbackReport extension", func() {
+			resp := doReq("getOpenSubsonicExtensions")
+
+			extensions := *resp.OpenSubsonicExtensions
+			var names []string
+			for _, ext := range extensions {
+				names = append(names, ext.Name)
+			}
+			Expect(names).To(ContainElement("playbackReport"))
+		})
 	})
 
 	Describe("apiKey authentication", func() {

@@ -417,6 +417,10 @@ func (n noopPlayTracker) NowPlaying(context.Context, string, string, string, int
 	return nil
 }
 
+func (n noopPlayTracker) ReportPlayback(context.Context, scrobbler.PlaybackReport) error {
+	return nil
+}
+
 func (n noopPlayTracker) GetNowPlaying(context.Context) ([]scrobbler.NowPlayingInfo, error) {
 	return nil, nil
 }

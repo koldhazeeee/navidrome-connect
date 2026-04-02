@@ -48,6 +48,24 @@ const scrobble = (id, time, submission = true, position = null) =>
 
 const nowPlaying = (id, position = null) => scrobble(id, null, false, position)
 
+const reportPlayback = (
+  mediaId,
+  positionMs = 0,
+  state = 'playing',
+  playbackRate = 1.0,
+  ignoreScrobble = true,
+) =>
+  httpClient(
+    url('reportPlayback', null, {
+      mediaId,
+      mediaType: 'song',
+      positionMs,
+      state,
+      playbackRate,
+      ignoreScrobble,
+    }),
+  )
+
 const star = (id) => httpClient(url('star', id))
 
 const unstar = (id) => httpClient(url('unstar', id))
@@ -134,6 +152,7 @@ export default {
   ping,
   scrobble,
   nowPlaying,
+  reportPlayback,
   download,
   star,
   unstar,

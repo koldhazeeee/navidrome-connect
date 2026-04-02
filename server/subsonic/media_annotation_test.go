@@ -99,9 +99,11 @@ var _ = Describe("MediaAnnotationController", func() {
 })
 
 type fakePlayTracker struct {
-	Submissions []scrobbler.Submission
-	Playing     map[string]string
-	Error       error
+	Submissions     []scrobbler.Submission
+	Playing         map[string]string
+	Reports         []scrobbler.PlaybackReport
+	NowPlayingInfos []scrobbler.NowPlayingInfo
+	Error           error
 }
 
 func (f *fakePlayTracker) NowPlaying(_ context.Context, playerId string, _ string, trackId string, position int) error {
@@ -116,7 +118,15 @@ func (f *fakePlayTracker) NowPlaying(_ context.Context, playerId string, _ strin
 }
 
 func (f *fakePlayTracker) GetNowPlaying(_ context.Context) ([]scrobbler.NowPlayingInfo, error) {
-	return nil, f.Error
+	return f.NowPlayingInfos, f.Error
+}
+
+func (f *fakePlayTracker) ReportPlayback(_ context.Context, report scrobbler.PlaybackReport) error {
+	if f.Error != nil {
+		return f.Error
+	}
+	f.Reports = append(f.Reports, report)
+	return nil
 }
 
 func (f *fakePlayTracker) Submit(_ context.Context, submissions []scrobbler.Submission) error {
