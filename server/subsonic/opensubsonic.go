@@ -8,7 +8,7 @@ import (
 
 func (api *Router) GetOpenSubsonicExtensions(_ *http.Request) (*responses.Subsonic, error) {
 	response := newResponse()
-	response.OpenSubsonicExtensions = &responses.OpenSubsonicExtensions{
+	extensions := responses.OpenSubsonicExtensions{
 		{Name: "apiKeyAuthentication", Versions: []int32{1}},
 		{Name: "transcodeOffset", Versions: []int32{1}},
 		{Name: "formPost", Versions: []int32{1}},
@@ -17,5 +17,9 @@ func (api *Router) GetOpenSubsonicExtensions(_ *http.Request) (*responses.Subson
 		{Name: "transcoding", Versions: []int32{1}},
 		{Name: "playbackReport", Versions: []int32{1}},
 	}
+	if api.connectAvailable() {
+		extensions = append(extensions, responses.OpenSubsonicExtension{Name: "connectPlayback", Versions: []int32{1}})
+	}
+	response.OpenSubsonicExtensions = &extensions
 	return response, nil
 }

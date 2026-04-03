@@ -3,36 +3,67 @@ import { act, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Player } from './Player'
 import subsonic from '../subsonic'
+import { decisionService } from '../transcode'
 
 let playerProps
 const mockDispatch = vi.fn()
 const mockSeekGuard = vi.fn()
-const mockAudioInstance = { currentTime: 0, paused: false, volume: 1 }
-const mockState = {
-  player: {
-    queue: [
-      {
-        uuid: 'uuid-1',
-        trackId: 'track-1',
-        isRadio: false,
-        song: { title: 'Song', artist: 'Artist', album: 'Album' },
-      },
-    ],
-    current: {
+const mockDataProvider = { getOne: vi.fn(() => Promise.resolve({ data: {} })) }
+const mockAudioInstance = {
+  currentTime: 0,
+  paused: false,
+  readyState: 3,
+  volume: 1,
+  muted: false,
+  play: vi.fn(() => {
+    mockAudioInstance.paused = false
+    return Promise.resolve()
+  }),
+  pause: vi.fn(() => {
+    mockAudioInstance.paused = true
+  }),
+}
+
+const createPlayerState = () => ({
+  queue: [
+    {
       uuid: 'uuid-1',
       trackId: 'track-1',
       isRadio: false,
       song: { title: 'Song', artist: 'Artist', album: 'Album' },
     },
-    mode: 'order',
-    volume: 1,
-    autoPlay: true,
-    clear: false,
-    playIndex: 0,
-    savedPlayIndex: 0,
+  ],
+  current: {
+    uuid: 'uuid-1',
+    trackId: 'track-1',
+    isRadio: false,
+    song: { title: 'Song', artist: 'Artist', album: 'Album' },
   },
+  mode: 'order',
+  volume: 1,
+  autoPlay: true,
+  clear: false,
+  playIndex: 0,
+  savedPlayIndex: 0,
+})
+
+const createConnectSession = () => ({
+  isFollower: false,
+  hostDeviceId: null,
+  trackId: null,
+  positionMs: 0,
+  state: null,
+  title: null,
+  artist: null,
+  playMode: null,
+})
+
+const mockState = {
+  player: createPlayerState(),
   replayGain: { gainMode: 'off' },
   settings: { notifications: false },
+  connectCommand: null,
+  connectSession: createConnectSession(),
 }
 
 vi.mock('react-redux', () => ({
@@ -47,7 +78,7 @@ vi.mock('@material-ui/core', () => ({
 vi.mock('react-admin', () => ({
   createMuiTheme: (theme) => theme,
   useAuthState: () => ({ authenticated: true }),
-  useDataProvider: () => ({ getOne: vi.fn(() => Promise.resolve()) }),
+  useDataProvider: () => mockDataProvider,
   useTranslate: () => (key) => key,
 }))
 
@@ -106,8 +137,17 @@ vi.mock('../transcode', () => ({
 vi.mock('../actions', () => ({
   clearQueue: vi.fn(() => ({ type: 'CLEAR_QUEUE' })),
   currentPlaying: vi.fn((info) => ({ type: 'CURRENT_PLAYING', payload: info })),
+  playTracks: vi.fn((data, ids, selectedId) => ({
+    type: 'PLAY_TRACKS',
+    payload: { data, ids, selectedId },
+  })),
   refreshQueue: vi.fn((payload) => ({ type: 'REFRESH_QUEUE', payload })),
+  setFollowerTrack: vi.fn((data, silentSrc) => ({
+    type: 'SET_FOLLOWER_TRACK',
+    payload: { data, silentSrc },
+  })),
   setPlayMode: vi.fn((payload) => ({ type: 'SET_PLAY_MODE', payload })),
+  setTrack: vi.fn((payload) => ({ type: 'SET_TRACK', payload })),
   setTranscodingProfile: vi.fn((payload) => ({
     type: 'SET_TRANSCODING_PROFILE',
     payload,
@@ -123,6 +163,10 @@ vi.mock('../utils', () => ({
   sendNotification: vi.fn(),
 }))
 
+vi.mock('../utils/silentAudio', () => ({
+  createSilentBlobUrl: vi.fn(() => 'blob:silent'),
+}))
+
 vi.mock('./useTabSwitchSeekGuard', () => ({
   useTabSwitchSeekGuard: () => mockSeekGuard,
 }))
@@ -131,8 +175,22 @@ describe('<Player />', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     playerProps = undefined
+    mockDataProvider.getOne.mockResolvedValue({ data: {} })
     mockAudioInstance.currentTime = 0
     mockAudioInstance.paused = false
+    mockAudioInstance.readyState = 3
+    mockAudioInstance.muted = false
+    mockAudioInstance.play.mockImplementation(() => {
+      mockAudioInstance.paused = false
+      return Promise.resolve()
+    })
+    mockAudioInstance.pause.mockImplementation(() => {
+      mockAudioInstance.paused = true
+    })
+    mockState.player = createPlayerState()
+    mockState.connectCommand = null
+    mockState.connectSession = createConnectSession()
+    document.title = 'Navidrome'
   })
 
   const renderPlayer = async () => {
@@ -210,5 +268,119 @@ describe('<Player />', () => {
       1.0,
       true,
     )
+  })
+
+  it('prefetches the next song without crashing when the current track is missing', async () => {
+    mockState.player = {
+      ...createPlayerState(),
+      queue: [
+        {
+          uuid: 'uuid-1',
+          trackId: 'track-1',
+          isRadio: false,
+          song: { title: 'Song 1', artist: 'Artist', album: 'Album' },
+        },
+        {
+          uuid: 'uuid-2',
+          trackId: 'track-2',
+          isRadio: false,
+          song: { title: 'Song 2', artist: 'Artist', album: 'Album' },
+        },
+      ],
+      current: undefined,
+      savedPlayIndex: 0,
+      playIndex: 0,
+    }
+
+    await renderPlayer()
+    decisionService.prefetchDecisions.mockClear()
+
+    expect(() => {
+      act(() => {
+        playerProps.onAudioProgress({
+          currentTime: 121,
+          duration: 200,
+          isRadio: false,
+        })
+      })
+    }).not.toThrow()
+
+    expect(decisionService.prefetchDecisions).toHaveBeenCalledWith(['track-2'])
+  })
+
+  it('resets follower position to zero and updates the document title on a new followed song', async () => {
+    mockState.connectSession = {
+      isFollower: true,
+      hostDeviceId: 'host-device',
+      trackId: 'track-2',
+      positionMs: 0,
+      state: 'paused',
+      title: 'Betrayed',
+      artist: 'Lil Xan',
+      playMode: 'order',
+    }
+    mockDataProvider.getOne.mockResolvedValueOnce({
+      data: {
+        id: 'track-2',
+        title: 'Betrayed',
+        artist: 'Lil Xan',
+        album: 'Album',
+        duration: 215,
+      },
+    })
+
+    mockAudioInstance.currentTime = 91.7
+
+    await renderPlayer()
+
+    act(() => {
+      playerProps.getAudioInstance(mockAudioInstance)
+    })
+
+    await waitFor(() => expect(mockAudioInstance.currentTime).toBe(0))
+    await waitFor(() =>
+      expect(document.title).toBe('Betrayed - Lil Xan - Navidrome'),
+    )
+  })
+
+  it('mutes follower audio so joined sessions can start playing automatically', async () => {
+    mockState.connectSession = {
+      isFollower: true,
+      hostDeviceId: 'host-device',
+      trackId: 'track-2',
+      positionMs: 48437,
+      state: 'playing',
+      title: 'Lean Wit Me',
+      artist: 'Juice WRLD',
+      playMode: 'order',
+    }
+    mockDataProvider.getOne.mockResolvedValueOnce({
+      data: {
+        id: 'track-2',
+        title: 'Lean Wit Me',
+        artist: 'Juice WRLD',
+        album: 'Album',
+        duration: 215,
+      },
+    })
+    mockAudioInstance.paused = true
+    mockAudioInstance.play.mockImplementation(() => {
+      if (!mockAudioInstance.muted) {
+        return Promise.reject(new Error('NotAllowedError'))
+      }
+      mockAudioInstance.paused = false
+      return Promise.resolve()
+    })
+
+    await renderPlayer()
+
+    act(() => {
+      playerProps.getAudioInstance(mockAudioInstance)
+    })
+
+    await waitFor(() => expect(mockAudioInstance.muted).toBe(true))
+    await waitFor(() => expect(mockAudioInstance.currentTime).toBe(48.437))
+    await waitFor(() => expect(mockAudioInstance.play).toHaveBeenCalled())
+    await waitFor(() => expect(mockAudioInstance.paused).toBe(false))
   })
 })

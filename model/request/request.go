@@ -9,15 +9,16 @@ import (
 type contextKey string
 
 const (
-	User           = contextKey("user")
-	Username       = contextKey("username")
-	Client         = contextKey("client")
-	Version        = contextKey("version")
-	Player         = contextKey("player")
-	Transcoding    = contextKey("transcoding")
-	ClientUniqueId = contextKey("clientUniqueId")
-	ReverseProxyIp = contextKey("reverseProxyIp")
-	InternalAuth   = contextKey("internalAuth") // Used for internal API calls, e.g., from the plugins
+	User                 = contextKey("user")
+	Username             = contextKey("username")
+	Client               = contextKey("client")
+	Version              = contextKey("version")
+	Player               = contextKey("player")
+	Transcoding          = contextKey("transcoding")
+	ClientUniqueId       = contextKey("clientUniqueId")
+	ReverseProxyIp       = contextKey("reverseProxyIp")
+	InternalAuth         = contextKey("internalAuth") // Used for internal API calls, e.g., from the plugins
+	TargetClientUniqueId = contextKey("targetClientUniqueId")
 )
 
 var allKeys = []contextKey{
@@ -30,6 +31,7 @@ var allKeys = []contextKey{
 	ClientUniqueId,
 	ReverseProxyIp,
 	InternalAuth,
+	TargetClientUniqueId,
 }
 
 func WithUser(ctx context.Context, u model.User) context.Context {
@@ -66,6 +68,10 @@ func WithReverseProxyIp(ctx context.Context, reverseProxyIp string) context.Cont
 
 func WithInternalAuth(ctx context.Context, username string) context.Context {
 	return context.WithValue(ctx, InternalAuth, username)
+}
+
+func WithTargetClientUniqueId(ctx context.Context, targetClientUniqueId string) context.Context {
+	return context.WithValue(ctx, TargetClientUniqueId, targetClientUniqueId)
 }
 
 func UserFrom(ctx context.Context) (model.User, bool) {
@@ -115,6 +121,11 @@ func InternalAuthFrom(ctx context.Context) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func TargetClientUniqueIdFrom(ctx context.Context) (string, bool) {
+	v, ok := ctx.Value(TargetClientUniqueId).(string)
+	return v, ok
 }
 
 func AddValues(ctx, requestCtx context.Context) context.Context {

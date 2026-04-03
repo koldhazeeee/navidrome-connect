@@ -63,6 +63,8 @@ type Subsonic struct {
 	LyricsList             *LyricsList             `xml:"lyricsList,omitempty"              json:"lyricsList,omitempty"`
 	PlayQueueByIndex       *PlayQueueByIndex       `xml:"playQueueByIndex,omitempty" json:"playQueueByIndex,omitempty"`
 	TranscodeDecision      *TranscodeDecision      `xml:"transcodeDecision,omitempty"       json:"transcodeDecision,omitempty"`
+	ConnectDevices         *ConnectDevices         `xml:"connectDevices,omitempty"           json:"connectDevices,omitempty"`
+	ConnectTransfer        *ConnectTransfer        `xml:"connectTransfer,omitempty"          json:"connectTransfer,omitempty"`
 }
 
 const (

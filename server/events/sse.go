@@ -62,6 +62,10 @@ type broker struct {
 
 	// Closed client connections
 	unsubscribing clientsChan
+
+	// Optional lifecycle callbacks for features that need to track SSE presence.
+	onConnect    func(username, clientUniqueId string)
+	onDisconnect func(username, clientUniqueId string)
 }
 
 func GetBroker() Broker {
@@ -82,6 +86,14 @@ func GetBroker() Broker {
 func (b *broker) SendBroadcastMessage(ctx context.Context, evt Event) {
 	ctx = broadcastToAll(ctx)
 	b.SendMessage(ctx, evt)
+}
+
+func (b *broker) SetOnConnect(fn func(username, clientUniqueId string)) {
+	b.onConnect = fn
+}
+
+func (b *broker) SetOnDisconnect(fn func(username, clientUniqueId string)) {
+	b.onDisconnect = fn
 }
 
 func (b *broker) SendMessage(ctx context.Context, evt Event) {
@@ -197,15 +209,22 @@ func (b *broker) shouldSend(msg message, c client) bool {
 	if broadcastToAll, ok := msg.senderCtx.Value(broadcastToAllKey).(bool); ok && broadcastToAll {
 		return true
 	}
+
+	if username, ok := request.UsernameFrom(msg.senderCtx); ok && username != c.username {
+		return false
+	}
+
+	if targetClientUniqueId, ok := request.TargetClientUniqueIdFrom(msg.senderCtx); ok && targetClientUniqueId != "" {
+		return c.clientUniqueId == targetClientUniqueId
+	}
+
 	clientUniqueId, originatedFromClient := request.ClientUniqueIdFrom(msg.senderCtx)
 	if !originatedFromClient {
 		return true
 	}
+
 	if c.clientUniqueId == clientUniqueId {
 		return false
-	}
-	if username, ok := request.UsernameFrom(msg.senderCtx); ok {
-		return username == c.username
 	}
 	return true
 }
@@ -230,6 +249,10 @@ func (b *broker) listen() {
 			clients[c] = struct{}{}
 			log.Debug("Client added to EventStream broker", "numActiveClients", len(clients), "newClient", c.String())
 
+			if b.onConnect != nil {
+				b.onConnect(c.username, c.clientUniqueId)
+			}
+
 			// Send a serverStart event to new client
 			msg := b.prepareMessage(context.Background(),
 				&ServerStart{StartTime: consts.ServerStart, Version: consts.Version})
@@ -241,6 +264,10 @@ func (b *broker) listen() {
 			close(c.msgC)
 			delete(clients, c)
 			log.Debug("Removed client from EventStream broker", "numActiveClients", len(clients), "client", c.String())
+
+			if b.onDisconnect != nil {
+				b.onDisconnect(c.username, c.clientUniqueId)
+			}
 
 		case msg := <-b.publish:
 			msg.id = getNextEventId()
@@ -290,3 +317,7 @@ type noopBroker struct {
 func (b noopBroker) SendBroadcastMessage(context.Context, Event) {}
 
 func (noopBroker) SendMessage(context.Context, Event) {}
+
+func (noopBroker) SetOnConnect(func(string, string)) {}
+
+func (noopBroker) SetOnDisconnect(func(string, string)) {}

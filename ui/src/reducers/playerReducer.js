@@ -8,6 +8,7 @@ import {
   PLAYER_PLAY_NEXT,
   PLAYER_PLAY_TRACKS,
   PLAYER_SET_TRACK,
+  PLAYER_SET_FOLLOWER_TRACK,
   PLAYER_SET_VOLUME,
   PLAYER_SYNC_QUEUE,
   PLAYER_SET_MODE,
@@ -125,6 +126,35 @@ const reduceSetTrack = (state, { data }) => {
   }
 }
 
+const reduceSetFollowerTrack = (state, { data, silentSrc }) => {
+  const trackId = data.mediaFileId || data.id
+  return {
+    ...state,
+    queue: [
+      {
+        trackId,
+        uuid: uuidv4(),
+        song: data,
+        name: data.title,
+        singer: data.artist,
+        duration: data.duration,
+        musicSrc: silentSrc,
+        cover: subsonic.getCoverArtUrl(
+          {
+            id: trackId,
+            updatedAt: data.updatedAt,
+            album: data.album,
+          },
+          300,
+        ),
+        lyric: '',
+      },
+    ],
+    playIndex: 0,
+    clear: true,
+  }
+}
+
 const reduceAddTracks = (state, { data }) => {
   const queue = state.queue
   Object.keys(data).forEach((id) => {
@@ -215,6 +245,8 @@ export const playerReducer = (previousState = initialState, payload) => {
       return reducePlayTracks(previousState, payload)
     case PLAYER_SET_TRACK:
       return reduceSetTrack(previousState, payload)
+    case PLAYER_SET_FOLLOWER_TRACK:
+      return reduceSetFollowerTrack(previousState, payload)
     case PLAYER_ADD_TRACKS:
       return reduceAddTracks(previousState, payload)
     case PLAYER_PLAY_NEXT:

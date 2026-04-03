@@ -4,11 +4,13 @@ import { useGetOne } from 'react-admin'
 import { GlobalHotKeys } from 'react-hotkeys'
 import IconButton from '@material-ui/core/IconButton'
 import { useMediaQuery } from '@material-ui/core'
+import DevicesIcon from '@material-ui/icons/Devices'
 import { RiSaveLine } from 'react-icons/ri'
 import { LoveButton, useToggleLove } from '../common'
-import { openSaveQueueDialog } from '../actions'
+import { openConnectDevicesDialog, openSaveQueueDialog } from '../actions'
 import { keyMap } from '../hotkeys'
 import { makeStyles } from '@material-ui/core/styles'
+import config from '../config'
 
 const useStyles = makeStyles((theme) => ({
   toolbar: {
@@ -74,6 +76,14 @@ const PlayerToolbar = ({ id, isRadio }) => {
     [dispatch],
   )
 
+  const handleOpenConnectDevices = useCallback(
+    (e) => {
+      dispatch(openConnectDevicesDialog())
+      e.stopPropagation()
+    },
+    [dispatch],
+  )
+
   const buttonClass = isDesktop ? classes.button : classes.mobileButton
   const listItemClass = isDesktop ? classes.toolbar : classes.mobileListItem
 
@@ -88,6 +98,18 @@ const PlayerToolbar = ({ id, isRadio }) => {
       <RiSaveLine className={!isDesktop ? classes.mobileIcon : undefined} />
     </IconButton>
   )
+
+  const connectButton =
+    config.enableConnect && !isRadio ? (
+      <IconButton
+        size={isDesktop ? 'small' : undefined}
+        onClick={handleOpenConnectDevices}
+        data-testid="connect-devices-button"
+        className={buttonClass}
+      >
+        <DevicesIcon className={!isDesktop ? classes.mobileIcon : undefined} />
+      </IconButton>
+    ) : null
 
   const loveButton = (
     <LoveButton
@@ -104,11 +126,15 @@ const PlayerToolbar = ({ id, isRadio }) => {
       <GlobalHotKeys keyMap={keyMap} handlers={handlers} allowChanges />
       {isDesktop ? (
         <li className={`${listItemClass} item`}>
+          {connectButton}
           {saveQueueButton}
           {loveButton}
         </li>
       ) : (
         <>
+          {connectButton && (
+            <li className={`${listItemClass} item`}>{connectButton}</li>
+          )}
           <li className={`${listItemClass} item`}>{saveQueueButton}</li>
           <li className={`${listItemClass} item`}>{loveButton}</li>
         </>

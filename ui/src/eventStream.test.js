@@ -1,6 +1,6 @@
-import { describe, it, beforeEach, vi, expect } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { startEventStream } from './eventStream'
-import { serverDown } from './actions'
+import { processEvent, serverDown } from './actions'
 import config from './config'
 
 class MockEventSource {
@@ -22,15 +22,19 @@ describe('startEventStream', () => {
   vi.useFakeTimers()
   let dispatch
   let instance
+  let instances
 
   beforeEach(() => {
     dispatch = vi.fn()
+    instances = []
     global.EventSource = vi.fn().mockImplementation(function (url) {
       instance = new MockEventSource(url)
+      instances.push(instance)
       return instance
     })
     localStorage.setItem('is-authenticated', 'true')
     localStorage.setItem('token', 'abc')
+    localStorage.setItem('username', 'alice')
     config.devNewEventStream = true
     // Mock console.log to suppress output during tests
     vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -38,6 +42,7 @@ describe('startEventStream', () => {
 
   afterEach(() => {
     config.devNewEventStream = false
+    vi.clearAllTimers()
   })
 
   it('reconnects after an error', async () => {
@@ -47,5 +52,45 @@ describe('startEventStream', () => {
     expect(dispatch).toHaveBeenCalledWith(serverDown())
     vi.advanceTimersByTime(5000)
     expect(global.EventSource).toHaveBeenCalledTimes(2)
+  })
+
+  it('closes the previous stream before opening a new one in legacy mode', async () => {
+    config.devNewEventStream = false
+
+    await startEventStream(dispatch)
+    const firstInstance = instances[0]
+
+    localStorage.setItem('token', 'def')
+    await startEventStream(dispatch)
+    const secondInstance = instances[1]
+
+    expect(firstInstance.readyState).toBe(2)
+    expect(secondInstance.url).toContain('jwt=def')
+  })
+
+  it('ignores connect events for a different user', async () => {
+    config.devNewEventStream = false
+
+    await startEventStream(dispatch)
+    dispatch.mockClear()
+
+    instance.listeners.connectStateChanged({
+      type: 'connectStateChanged',
+      data: JSON.stringify({ forUser: 'admin', trackId: 'song-1' }),
+    })
+
+    expect(dispatch).not.toHaveBeenCalled()
+
+    instance.listeners.connectStateChanged({
+      type: 'connectStateChanged',
+      data: JSON.stringify({ forUser: 'alice', trackId: 'song-2' }),
+    })
+
+    expect(dispatch).toHaveBeenCalledWith(
+      processEvent('connectStateChanged', {
+        forUser: 'alice',
+        trackId: 'song-2',
+      }),
+    )
   })
 })

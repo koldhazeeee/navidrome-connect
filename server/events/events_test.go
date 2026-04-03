@@ -43,4 +43,29 @@ var _ = Describe("Events", func() {
 			Expect(data).To(Equal(`{"album":["*"]}`))
 		})
 	})
+
+	Describe("Connect events", func() {
+		It("keeps zero positions in connect command payloads", func() {
+			event := &ConnectCommand{
+				ForUser:        "alice",
+				TargetDeviceId: "device-1",
+				Command:        "seek",
+				PositionMs:     0,
+			}
+
+			Expect(event.Data(event)).To(Equal(`{"forUser":"alice","targetDeviceId":"device-1","command":"seek","positionMs":0}`))
+		})
+
+		It("keeps zero positions in connect state payloads", func() {
+			event := &ConnectStateChanged{
+				ForUser:    "alice",
+				DeviceId:   "device-1",
+				TrackId:    "track-1",
+				State:      "playing",
+				PositionMs: 0,
+			}
+
+			Expect(event.Data(event)).To(Equal(`{"forUser":"alice","deviceId":"device-1","trackId":"track-1","state":"playing","positionMs":0}`))
+		})
+	})
 })

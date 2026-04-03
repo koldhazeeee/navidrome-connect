@@ -61,14 +61,15 @@ describe('<PlayerToolbar />', () => {
       useMediaQuery.mockReturnValue(true) // isDesktop = true
     })
 
-    it('renders desktop toolbar with both buttons', () => {
+    it('renders desktop toolbar with connect, save, and love buttons', () => {
       render(<PlayerToolbar id="song-1" />)
 
-      // Both buttons should be in a single list item
+      // All buttons should be in a single list item
       const listItems = screen.getAllByRole('listitem')
       expect(listItems).toHaveLength(1)
 
-      // Verify both buttons are rendered
+      // Verify all buttons are rendered
+      expect(screen.getByTestId('connect-devices-button')).toBeInTheDocument()
       expect(screen.getByTestId('save-queue-button')).toBeInTheDocument()
       expect(screen.getByTestId('love-button')).toBeInTheDocument()
 
@@ -109,20 +110,22 @@ describe('<PlayerToolbar />', () => {
       useMediaQuery.mockReturnValue(false) // isDesktop = false
     })
 
-    it('renders mobile toolbar with buttons in separate list items', () => {
+    it('renders mobile toolbar with connect, save, and love buttons in separate list items', () => {
       render(<PlayerToolbar id="song-1" />)
 
       // Each button should be in its own list item
       const listItems = screen.getAllByRole('listitem')
-      expect(listItems).toHaveLength(2)
+      expect(listItems).toHaveLength(3)
 
-      // Verify both buttons are rendered
+      // Verify all buttons are rendered
+      expect(screen.getByTestId('connect-devices-button')).toBeInTheDocument()
       expect(screen.getByTestId('save-queue-button')).toBeInTheDocument()
       expect(screen.getByTestId('love-button')).toBeInTheDocument()
 
       // Verify mobile classes are applied
       expect(listItems[0].className).toContain('mobileListItem')
       expect(listItems[1].className).toContain('mobileListItem')
+      expect(listItems[2].className).toContain('mobileListItem')
     })
 
     it('disables save queue button when isRadio is true', () => {

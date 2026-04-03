@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { baseUrl, jwtDecode, removeHomeCache } = vi.hoisted(() => ({
-  baseUrl: vi.fn((path) => `http://localhost${path}`),
-  jwtDecode: vi.fn(),
-  removeHomeCache: vi.fn(),
-}))
+const { baseUrl, jwtDecode, removeHomeCache, stopEventStream } = vi.hoisted(
+  () => ({
+    baseUrl: vi.fn((path) => `http://localhost${path}`),
+    jwtDecode: vi.fn(),
+    removeHomeCache: vi.fn(),
+    stopEventStream: vi.fn(),
+  }),
+)
 
 vi.mock('./config', () => ({
   default: {
@@ -20,6 +23,10 @@ vi.mock('./utils', () => ({
 
 vi.mock('./utils/removeHomeCache', () => ({
   removeHomeCache,
+}))
+
+vi.mock('./eventStream', () => ({
+  stopEventStream,
 }))
 
 vi.mock('jwt-decode', () => ({
@@ -102,5 +109,6 @@ describe('authProvider', () => {
 
     expect(localStorage.getItem('apiKey')).toBeNull()
     expect(localStorage.getItem('is-authenticated')).toBeNull()
+    expect(stopEventStream).toHaveBeenCalled()
   })
 })

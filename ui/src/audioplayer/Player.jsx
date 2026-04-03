@@ -19,21 +19,27 @@ import AudioTitle from './AudioTitle'
 import {
   clearQueue,
   currentPlaying,
+  playTracks,
   refreshQueue,
+  setFollowerTrack,
   setPlayMode,
+  setTrack,
   setTranscodingProfile,
   setVolume,
   syncQueue,
 } from '../actions'
 import PlayerToolbar from './PlayerToolbar'
+import { httpClient } from '../dataProvider'
 import { sendNotification } from '../utils'
 import subsonic from '../subsonic'
 import locale from './locale'
 import { keyMap } from '../hotkeys'
 import keyHandlers from './keyHandlers'
 import { calculateGain } from '../utils/calculateReplayGain'
+import { createSilentBlobUrl } from '../utils/silentAudio'
 import { detectBrowserProfile, decisionService } from '../transcode'
 import { useTabSwitchSeekGuard } from './useTabSwitchSeekGuard'
+import connectDebug from '../utils/connectDebug'
 
 const Player = () => {
   const theme = useCurrentTheme()
@@ -41,6 +47,8 @@ const Player = () => {
   const playerTheme = theme.player?.theme || 'dark'
   const dataProvider = useDataProvider()
   const playerState = useSelector((state) => state.player)
+  const connectCommand = useSelector((state) => state.connectCommand)
+  const connectSession = useSelector((state) => state.connectSession)
   const dispatch = useDispatch()
   const [startTime, setStartTime] = useState(null)
   const [scrobbled, setScrobbled] = useState(false)
@@ -58,6 +66,9 @@ const Player = () => {
   // without re-triggering on every queue/position change
   const playerStateRef = useRef(playerState)
   playerStateRef.current = playerState
+  const silentBlobRef = useRef(null)
+  const followerTrackRef = useRef(null)
+  const suppressConnectForwardRef = useRef(false)
 
   // Detect browser codec profile and eagerly resolve transcode URLs for the
   // persisted queue once on mount (e.g. after a browser refresh)
@@ -124,12 +135,81 @@ const Player = () => {
   const [gainNode, setGainNode] = useState(null)
   const restoreSeekedPosition = useTabSwitchSeekGuard(audioInstance)
 
+  useEffect(
+    () => () => {
+      if (silentBlobRef.current) {
+        URL.revokeObjectURL(silentBlobRef.current)
+        silentBlobRef.current = null
+      }
+    },
+    [],
+  )
+
+  const withSuppressedConnectForwarding = useCallback((fn) => {
+    suppressConnectForwardRef.current = true
+    try {
+      fn()
+    } finally {
+      window.setTimeout(() => {
+        suppressConnectForwardRef.current = false
+      }, 250)
+    }
+  }, [])
+
+  const waitForAudioReady = useCallback(
+    (callback) => {
+      const interval = window.setInterval(() => {
+        const audio = audioInstance || document.querySelector('audio')
+        if (audio && audio.readyState >= 2) {
+          window.clearInterval(interval)
+          callback(audio)
+        }
+      }, 100)
+      window.setTimeout(() => window.clearInterval(interval), 10000)
+    },
+    [audioInstance],
+  )
+
+  const sendCommandToHost = useCallback(
+    (command, params = {}) => {
+      if (!connectSession?.hostDeviceId) {
+        return
+      }
+      const apiUrl = subsonic.url('sendConnectCommand', null, {
+        deviceId: connectSession.hostDeviceId,
+        command,
+        ...params,
+      })
+      if (apiUrl) {
+        httpClient(apiUrl).catch(() => {})
+      }
+    },
+    [connectSession?.hostDeviceId],
+  )
+
   const reportPlayback = useCallback((trackId, currentTime, state) => {
     if (!trackId) {
       return
     }
     const positionMs = Math.max(Math.floor((currentTime ?? 0) * 1000), 0)
+    connectDebug('reportPlayback send', {
+      trackId,
+      state,
+      positionMs,
+    })
     subsonic.reportPlayback(trackId, positionMs, state, 1.0, true)
+  }, [])
+
+  const setSongDocumentTitle = useCallback((song) => {
+    if (song?.title && song?.artist) {
+      document.title = `${song.title} - ${song.artist} - Navidrome`
+      return
+    }
+    if (song?.title) {
+      document.title = `${song.title} - Navidrome`
+      return
+    }
+    document.title = 'Navidrome'
   }, [])
 
   useEffect(() => {
@@ -155,6 +235,13 @@ const Player = () => {
   }, [audioInstance, context, gainInfo.gainMode])
 
   useEffect(() => {
+    if (!audioInstance) {
+      return
+    }
+    audioInstance.muted = connectSession?.isFollower === true
+  }, [audioInstance, connectSession?.isFollower])
+
+  useEffect(() => {
     if (gainNode) {
       const current = playerState.current || {}
       const song = current.song || {}
@@ -176,6 +263,265 @@ const Player = () => {
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [playerState, audioInstance])
+
+  useEffect(() => {
+    const command = connectCommand?.command
+    if (!command) {
+      return
+    }
+
+    const loadTrack = (trackId, onReady) => {
+      dataProvider
+        .getOne('song', { id: trackId })
+        .then(({ data }) => {
+          dispatch(setTrack(data))
+          waitForAudioReady((audio) => onReady(audio, data))
+        })
+        .catch(() => {})
+    }
+
+    if (
+      (command.command === 'becomeHost' ||
+        command.command === 'startFromState') &&
+      command.trackId
+    ) {
+      if (silentBlobRef.current) {
+        URL.revokeObjectURL(silentBlobRef.current)
+        silentBlobRef.current = null
+      }
+      followerTrackRef.current = null
+      loadTrack(command.trackId, (audio) => {
+        audio.muted = false
+        if (command.positionMs != null) {
+          audio.currentTime = command.positionMs / 1000
+        }
+        if (command.startPlaying === false) {
+          audio.pause()
+        } else {
+          audio.play().catch(() => {})
+        }
+      })
+      return
+    }
+
+    if (command.command === 'setQueue' && command.trackIds?.length) {
+      Promise.all(
+        command.trackIds.map((id) =>
+          dataProvider.getOne('song', { id }).then(({ data }) => data),
+        ),
+      )
+        .then((songs) => {
+          const data = {}
+          const ids = []
+          songs.forEach((song) => {
+            data[song.id] = song
+            ids.push(song.id)
+          })
+          dispatch(playTracks(data, ids, command.selectedId || ids[0]))
+        })
+        .catch(() => {})
+      return
+    }
+
+    if (command.command === 'exitFollower') {
+      followerTrackRef.current = null
+      if (silentBlobRef.current) {
+        URL.revokeObjectURL(silentBlobRef.current)
+        silentBlobRef.current = null
+      }
+      return
+    }
+
+    if (!audioInstance) {
+      return
+    }
+
+    switch (command.command) {
+      case 'pause':
+        if (!audioInstance.paused) {
+          audioInstance.pause()
+        }
+        break
+      case 'play':
+      case 'resume':
+        if (audioInstance.paused) {
+          audioInstance.play().catch(() => {})
+        }
+        break
+      case 'stop':
+        audioInstance.pause()
+        audioInstance.currentTime = 0
+        break
+      case 'seek':
+        if (command.positionMs != null) {
+          audioInstance.currentTime = command.positionMs / 1000
+        }
+        break
+      case 'setVolume':
+        if (command.volume != null) {
+          audioInstance.volume = Math.max(0, Math.min(1, command.volume / 100))
+        }
+        break
+      case 'setPlayMode':
+        if (command.playMode) {
+          dispatch(setPlayMode(command.playMode))
+        }
+        break
+      case 'next':
+        audioInstance.playNext?.()
+        break
+      case 'prev':
+        audioInstance.playPrev?.()
+        break
+      default:
+        break
+    }
+  }, [
+    audioInstance,
+    connectCommand?.command,
+    connectCommand?.seq,
+    dataProvider,
+    dispatch,
+    waitForAudioReady,
+  ])
+
+  useEffect(() => {
+    if (!connectSession?.isFollower) {
+      followerTrackRef.current = null
+      return
+    }
+
+    if (
+      connectSession.trackId &&
+      connectSession.trackId !== followerTrackRef.current
+    ) {
+      dataProvider
+        .getOne('song', { id: connectSession.trackId })
+        .then(({ data }) => {
+          if (silentBlobRef.current) {
+            URL.revokeObjectURL(silentBlobRef.current)
+          }
+          connectDebug('follower track change received', {
+            trackId: connectSession.trackId,
+            title: data.title,
+            artist: data.artist,
+            receivedPositionMs: connectSession.positionMs ?? 0,
+            receivedState: connectSession.state,
+            previousCurrentTime: audioInstance?.currentTime ?? null,
+          })
+          followerTrackRef.current = connectSession.trackId
+          silentBlobRef.current = createSilentBlobUrl(data.duration || 300)
+          dispatch(setFollowerTrack(data, silentBlobRef.current))
+          setSongDocumentTitle(data)
+          if (audioInstance) {
+            withSuppressedConnectForwarding(() => {
+              audioInstance.currentTime = 0
+            })
+          }
+          waitForAudioReady((audio) => {
+            withSuppressedConnectForwarding(() => {
+              const desiredTime =
+                Math.max(connectSession.positionMs ?? 0, 0) / 1000
+              connectDebug('follower initial seek apply', {
+                trackId: connectSession.trackId,
+                receivedPositionMs: connectSession.positionMs ?? 0,
+                appliedSeconds: desiredTime,
+                audioReadyState: audio.readyState,
+              })
+              audio.muted = true
+              audio.currentTime = desiredTime
+              if (connectSession.state === 'paused') {
+                audio.pause()
+              } else {
+                audio.play().catch(() => {})
+              }
+            })
+          })
+        })
+        .catch(() => {})
+      return
+    }
+
+    if (!audioInstance) {
+      return
+    }
+
+    if (connectSession.positionMs != null) {
+      const desiredTime = Math.max(connectSession.positionMs, 0) / 1000
+      const driftSeconds = Math.abs(audioInstance.currentTime - desiredTime)
+      connectDebug('follower sync received', {
+        trackId: connectSession.trackId,
+        receivedPositionMs: connectSession.positionMs,
+        desiredSeconds: desiredTime,
+        currentSeconds: audioInstance.currentTime,
+        driftSeconds,
+        forceReset: desiredTime === 0,
+      })
+      if (desiredTime === 0 || driftSeconds > 3) {
+        withSuppressedConnectForwarding(() => {
+          connectDebug('follower sync apply', {
+            trackId: connectSession.trackId,
+            applyingSeconds: desiredTime,
+            previousSeconds: audioInstance.currentTime,
+          })
+          audioInstance.currentTime = desiredTime
+        })
+      }
+    }
+
+    if (connectSession.state === 'paused' && !audioInstance.paused) {
+      withSuppressedConnectForwarding(() => {
+        audioInstance.pause()
+      })
+    } else if (connectSession.state === 'playing' && audioInstance.paused) {
+      withSuppressedConnectForwarding(() => {
+        audioInstance.muted = true
+        audioInstance.play().catch(() => {})
+      })
+    }
+
+    if (
+      connectSession.playMode &&
+      connectSession.playMode !== playerStateRef.current.mode
+    ) {
+      dispatch(setPlayMode(connectSession.playMode))
+    }
+  }, [
+    audioInstance,
+    connectSession?.isFollower,
+    connectSession?.playMode,
+    connectSession?.positionMs,
+    connectSession?.state,
+    connectSession?.trackId,
+    dataProvider,
+    dispatch,
+    setSongDocumentTitle,
+    waitForAudioReady,
+    withSuppressedConnectForwarding,
+  ])
+
+  useEffect(() => {
+    if (!connectSession?.isFollower) {
+      return undefined
+    }
+
+    const handleClick = (event) => {
+      const button = event.target.closest(
+        '.group.next-audio, .group.prev-audio',
+      )
+      if (!button) {
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      sendCommandToHost(
+        button.classList.contains('next-audio') ? 'next' : 'prev',
+      )
+    }
+
+    document.addEventListener('click', handleClick, true)
+    return () => document.removeEventListener('click', handleClick, true)
+  }, [connectSession?.isFollower, sendCommandToHost])
 
   const defaultOptions = useMemo(
     () => ({
@@ -238,10 +584,29 @@ const Player = () => {
   )
 
   const nextSong = useCallback(() => {
-    const idx = playerState.queue.findIndex(
-      (item) => item.uuid === playerState.current.uuid,
+    const currentUuid = playerState.current?.uuid
+    if (currentUuid) {
+      const currentIdx = playerState.queue.findIndex(
+        (item) => item.uuid === currentUuid,
+      )
+      if (currentIdx >= 0) {
+        return playerState.queue[currentIdx + 1] ?? null
+      }
+    }
+
+    const fallbackIndex = [
+      playerState.savedPlayIndex,
+      playerState.playIndex,
+    ].find(
+      (index) =>
+        Number.isInteger(index) &&
+        index >= 0 &&
+        index < playerState.queue.length,
     )
-    return idx !== null ? playerState.queue[idx + 1] : null
+
+    return fallbackIndex != null
+      ? (playerState.queue[fallbackIndex + 1] ?? null)
+      : null
   }, [playerState])
 
   const onAudioProgress = useCallback(
@@ -279,8 +644,19 @@ const Player = () => {
 
   const onAudioVolumeChange = useCallback(
     // sqrt to compensate for the logarithmic volume
-    (volume) => dispatch(setVolume(Math.sqrt(volume))),
-    [dispatch],
+    (volume) => {
+      const normalizedVolume = Math.sqrt(volume)
+      if (connectSession?.isFollower) {
+        if (!suppressConnectForwardRef.current) {
+          sendCommandToHost('setVolume', {
+            volume: Math.round(normalizedVolume * 100),
+          })
+        }
+        return
+      }
+      dispatch(setVolume(normalizedVolume))
+    },
+    [connectSession?.isFollower, dispatch, sendCommandToHost],
   )
 
   const onAudioPlay = useCallback(
@@ -292,12 +668,20 @@ const Player = () => {
       }
 
       dispatch(currentPlaying(info))
+      if (info.duration && info.song) {
+        setSongDocumentTitle(info.song)
+      }
+      if (connectSession?.isFollower) {
+        if (!suppressConnectForwardRef.current) {
+          sendCommandToHost('play')
+        }
+        return
+      }
       if (startTime === null) {
         setStartTime(Date.now())
       }
       if (info.duration) {
         const song = info.song
-        document.title = `${song.title} - ${song.artist} - Navidrome`
         if (!info.isRadio) {
           reportPlayback(info.trackId, info.currentTime, 'playing')
         }
@@ -318,11 +702,28 @@ const Player = () => {
         }
       }
     },
-    [context, dispatch, reportPlayback, showNotifications, startTime],
+    [
+      connectSession?.isFollower,
+      context,
+      dispatch,
+      reportPlayback,
+      sendCommandToHost,
+      setSongDocumentTitle,
+      showNotifications,
+      startTime,
+    ],
   )
 
   const onAudioSeeked = useCallback(() => {
     restoreSeekedPosition()
+    if (connectSession?.isFollower) {
+      if (!suppressConnectForwardRef.current && audioInstance) {
+        sendCommandToHost('seek', {
+          positionMs: Math.max(Math.floor(audioInstance.currentTime * 1000), 0),
+        })
+      }
+      return
+    }
     if (!currentTrack?.isRadio && currentTrack?.trackId && audioInstance) {
       reportPlayback(
         currentTrack.trackId,
@@ -330,9 +731,25 @@ const Player = () => {
         audioInstance.paused ? 'paused' : 'playing',
       )
     }
-  }, [audioInstance, currentTrack, reportPlayback, restoreSeekedPosition])
+  }, [
+    audioInstance,
+    connectSession?.isFollower,
+    currentTrack,
+    reportPlayback,
+    restoreSeekedPosition,
+    sendCommandToHost,
+  ])
 
   const onAudioPlayTrackChange = useCallback(() => {
+    if (connectSession?.isFollower) {
+      if (scrobbled) {
+        setScrobbled(false)
+      }
+      if (startTime !== null) {
+        setStartTime(null)
+      }
+      return
+    }
     if (
       startTime !== null &&
       currentTrack?.trackId &&
@@ -347,22 +764,42 @@ const Player = () => {
     if (startTime !== null) {
       setStartTime(null)
     }
-  }, [audioInstance, currentTrack, reportPlayback, scrobbled, startTime])
+  }, [
+    audioInstance,
+    connectSession?.isFollower,
+    currentTrack,
+    reportPlayback,
+    scrobbled,
+    startTime,
+  ])
 
   const onAudioPause = useCallback(
     (info) => {
       dispatch(currentPlaying(info))
+      if (connectSession?.isFollower) {
+        if (!suppressConnectForwardRef.current) {
+          sendCommandToHost('pause')
+        }
+        return
+      }
       if (!info.isRadio) {
         reportPlayback(info.trackId, info.currentTime, 'paused')
       }
     },
-    [dispatch, reportPlayback],
+    [connectSession?.isFollower, dispatch, reportPlayback, sendCommandToHost],
   )
 
   const onAudioEnded = useCallback(
     (currentPlayId, audioLists, info) => {
       setScrobbled(false)
       setStartTime(null)
+      if (connectSession?.isFollower) {
+        if (!suppressConnectForwardRef.current) {
+          sendCommandToHost('stop')
+        }
+        dispatch(currentPlaying(info))
+        return
+      }
       if (!info.isRadio) {
         reportPlayback(info.trackId, info.currentTime, 'stopped')
       }
@@ -372,7 +809,13 @@ const Player = () => {
         // eslint-disable-next-line no-console
         .catch((e) => console.log('Keepalive error:', e))
     },
-    [dispatch, dataProvider, reportPlayback],
+    [
+      connectSession?.isFollower,
+      dataProvider,
+      dispatch,
+      reportPlayback,
+      sendCommandToHost,
+    ],
   )
 
   const onCoverClick = useCallback((mode, audioLists, audioInfo) => {
@@ -437,7 +880,16 @@ const Player = () => {
         onAudioPlayTrackChange={onAudioPlayTrackChange}
         onAudioSeeked={onAudioSeeked}
         onAudioPause={onAudioPause}
-        onPlayModeChange={(mode) => dispatch(setPlayMode(mode))}
+        onPlayModeChange={(mode) => {
+          if (
+            connectSession?.isFollower &&
+            !suppressConnectForwardRef.current
+          ) {
+            sendCommandToHost('setPlayMode', { playMode: mode })
+            return
+          }
+          dispatch(setPlayMode(mode))
+        }}
         onAudioEnded={onAudioEnded}
         onCoverClick={onCoverClick}
         onAudioError={onAudioError}

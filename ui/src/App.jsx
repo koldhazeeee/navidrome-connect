@@ -26,6 +26,8 @@ import {
   expandInfoDialogReducer,
   listenBrainzTokenDialogReducer,
   saveQueueDialogReducer,
+  connectDevicesDialogReducer,
+  connectSessionReducer,
   playerReducer,
   albumViewReducer,
   activityReducer,
@@ -34,6 +36,7 @@ import {
   downloadMenuDialogReducer,
   shareDialogReducer,
   transcodingReducer,
+  connectCommandReducer,
 } from './reducers'
 import createAdminStore from './store/createAdminStore'
 import { i18nProvider } from './i18n'
@@ -69,11 +72,14 @@ const adminStore = createAdminStore({
     expandInfoDialog: expandInfoDialogReducer,
     listenBrainzTokenDialog: listenBrainzTokenDialogReducer,
     saveQueueDialog: saveQueueDialogReducer,
+    connectDevicesDialog: connectDevicesDialogReducer,
     shareDialog: shareDialogReducer,
     activity: activityReducer,
     settings: settingsReducer,
     replayGain: replayGainReducer,
     transcoding: transcodingReducer,
+    connectCommand: connectCommandReducer,
+    connectSession: connectSessionReducer,
   },
 })
 

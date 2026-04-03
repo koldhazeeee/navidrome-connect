@@ -13,6 +13,7 @@ import (
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/core"
 	"github.com/navidrome/navidrome/core/artwork"
+	"github.com/navidrome/navidrome/core/connect"
 	"github.com/navidrome/navidrome/core/external"
 	lyricssvc "github.com/navidrome/navidrome/core/lyrics"
 	"github.com/navidrome/navidrome/core/metrics"
@@ -52,6 +53,7 @@ type Router struct {
 	metrics           metrics.Metrics
 	lyrics            lyricssvc.Lyrics
 	transcodeDecision stream.TranscodeDecider
+	connectDevices    connect.DeviceManager
 }
 
 func New(ds model.DataStore, artwork artwork.Artwork, streamer stream.MediaStreamer, archiver core.Archiver,
@@ -75,6 +77,7 @@ func New(ds model.DataStore, artwork artwork.Artwork, streamer stream.MediaStrea
 		metrics:           metrics,
 		lyrics:            lyrics,
 		transcodeDecision: transcodeDecision,
+		connectDevices:    newConnectDeviceManager(broker),
 	}
 	r.Handler = r.routes()
 	return r
@@ -221,6 +224,18 @@ func (api *Router) routes() http.Handler {
 			})
 		} else {
 			h501(r, "jukeboxControl")
+		}
+
+		if api.connectAvailable() {
+			r.Group(func(r chi.Router) {
+				r.Use(getPlayer(api.players))
+				h(r, "getConnectDevices", api.GetConnectDevices)
+				h(r, "sendConnectCommand", api.SendConnectCommand)
+				h(r, "transferPlayback", api.TransferPlayback)
+				h(r, "setDeviceNickname", api.SetDeviceNickname)
+			})
+		} else {
+			h501(r, "getConnectDevices", "sendConnectCommand", "transferPlayback", "setDeviceNickname")
 		}
 
 		// Not Implemented (yet?)

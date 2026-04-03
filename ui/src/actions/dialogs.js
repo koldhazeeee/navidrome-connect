@@ -16,6 +16,8 @@ export const DOWNLOAD_MENU_PLAY = 'playlist'
 export const DOWNLOAD_MENU_SONG = 'song'
 export const SHARE_MENU_OPEN = 'SHARE_MENU_OPEN'
 export const SHARE_MENU_CLOSE = 'SHARE_MENU_CLOSE'
+export const CONNECT_DEVICES_OPEN = 'CONNECT_DEVICES_OPEN'
+export const CONNECT_DEVICES_CLOSE = 'CONNECT_DEVICES_CLOSE'
 
 export const openShareMenu = (ids, resource, name, label) => ({
   type: SHARE_MENU_OPEN,
@@ -85,4 +87,12 @@ export const openSaveQueueDialog = () => ({
 
 export const closeSaveQueueDialog = () => ({
   type: SAVE_QUEUE_CLOSE,
+})
+
+export const openConnectDevicesDialog = () => ({
+  type: CONNECT_DEVICES_OPEN,
+})
+
+export const closeConnectDevicesDialog = () => ({
+  type: CONNECT_DEVICES_CLOSE,
 })

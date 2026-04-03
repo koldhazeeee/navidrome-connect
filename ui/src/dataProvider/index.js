@@ -1,6 +1,6 @@
 import httpClient from './httpClient'
 import wrapperDataProvider from './wrapperDataProvider'
 
-export { httpClient }
+export { httpClient, clientUniqueId } from './httpClient'
 
 export default wrapperDataProvider

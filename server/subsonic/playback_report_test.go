@@ -4,12 +4,16 @@ import (
 	"context"
 	"time"
 
+	"github.com/navidrome/navidrome/conf"
+	"github.com/navidrome/navidrome/conf/configtest"
+	coreconnect "github.com/navidrome/navidrome/core/connect"
 	"github.com/navidrome/navidrome/core/scrobbler"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
 	"github.com/navidrome/navidrome/tests"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	. "github.com/onsi/gomega/gstruct"
 )
 
 var _ = Describe("PlaybackReportController", func() {
@@ -22,6 +26,118 @@ var _ = Describe("PlaybackReportController", func() {
 	})
 
 	Describe("ReportPlayback", func() {
+		It("does not broadcast a pre-seek zero-position report from a newly transferred host", func() {
+			DeferCleanup(configtest.SetupConfig())
+			conf.Server.Connect.Enabled = true
+
+			broker := &fakeEventBroker{}
+			router = New(&tests.MockDataStore{}, nil, nil, nil, nil, nil, nil, broker, nil, playTracker, nil, nil, nil, nil, nil)
+			router.connectDevices.OnDeviceConnected("admin", "new-host")
+			router.connectDevices.SetHost("admin", coreconnect.HostState{
+				DeviceId:                 "new-host",
+				TrackId:                  "song-1",
+				PositionMs:               28628,
+				Playing:                  true,
+				IgnoreLowerPositionUntil: time.Now().Add(connectHostPreSeekGracePeriod),
+			})
+
+			ctx := request.WithUsername(context.Background(), "admin")
+			ctx = request.WithPlayer(ctx, model.Player{ID: "new-host"})
+			ctx = request.WithClientUniqueId(ctx, "new-host")
+			req := newGetRequest(
+				"mediaId=song-1",
+				"mediaType=song",
+				"positionMs=0",
+				"state=playing",
+			).WithContext(ctx)
+
+			_, err := router.ReportPlayback(req)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(playTracker.Reports).To(HaveLen(1))
+			Expect(broker.Events).To(BeEmpty())
+			Expect(router.connectDevices.GetHost("admin")).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"DeviceId":   Equal("new-host"),
+				"TrackId":    Equal("song-1"),
+				"PositionMs": Equal(int64(28628)),
+				"Playing":    BeTrue(),
+			})))
+		})
+
+		It("accepts backward seeks on the current track from the active host", func() {
+			DeferCleanup(configtest.SetupConfig())
+			conf.Server.Connect.Enabled = true
+
+			broker := &fakeEventBroker{}
+			router = New(&tests.MockDataStore{}, nil, nil, nil, nil, nil, nil, broker, nil, playTracker, nil, nil, nil, nil, nil)
+			router.connectDevices.OnDeviceConnected("admin", "host-device")
+			router.connectDevices.SetHost("admin", coreconnect.HostState{
+				DeviceId:   "host-device",
+				TrackId:    "song-1",
+				PositionMs: 147000,
+				Playing:    true,
+			})
+
+			ctx := request.WithUsername(context.Background(), "admin")
+			ctx = request.WithPlayer(ctx, model.Player{ID: "host-device"})
+			ctx = request.WithClientUniqueId(ctx, "host-device")
+			req := newGetRequest(
+				"mediaId=song-1",
+				"mediaType=song",
+				"positionMs=30000",
+				"state=playing",
+			).WithContext(ctx)
+
+			_, err := router.ReportPlayback(req)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(playTracker.Reports).To(HaveLen(1))
+			Expect(broker.Events).To(HaveLen(1))
+			Expect(router.connectDevices.GetHost("admin")).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"DeviceId":   Equal("host-device"),
+				"TrackId":    Equal("song-1"),
+				"PositionMs": Equal(int64(30000)),
+				"Playing":    BeTrue(),
+			})))
+		})
+
+		It("updates the connect host immediately when the next track starts at zero position", func() {
+			DeferCleanup(configtest.SetupConfig())
+			conf.Server.Connect.Enabled = true
+
+			broker := &fakeEventBroker{}
+			router = New(&tests.MockDataStore{}, nil, nil, nil, nil, nil, nil, broker, nil, playTracker, nil, nil, nil, nil, nil)
+			router.connectDevices.OnDeviceConnected("admin", "host-device")
+			router.connectDevices.SetHost("admin", coreconnect.HostState{
+				DeviceId:   "host-device",
+				TrackId:    "song-1",
+				PositionMs: 5524,
+				Playing:    true,
+			})
+
+			ctx := request.WithUsername(context.Background(), "admin")
+			ctx = request.WithPlayer(ctx, model.Player{ID: "host-device"})
+			ctx = request.WithClientUniqueId(ctx, "host-device")
+			req := newGetRequest(
+				"mediaId=song-2",
+				"mediaType=song",
+				"positionMs=0",
+				"state=playing",
+			).WithContext(ctx)
+
+			_, err := router.ReportPlayback(req)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(playTracker.Reports).To(HaveLen(1))
+			Expect(broker.Events).To(HaveLen(1))
+			Expect(router.connectDevices.GetHost("admin")).To(PointTo(MatchFields(IgnoreExtras, Fields{
+				"DeviceId":   Equal("host-device"),
+				"TrackId":    Equal("song-2"),
+				"PositionMs": Equal(int64(0)),
+				"Playing":    BeTrue(),
+			})))
+		})
+
 		It("forwards playback reports with defaults", func() {
 			ctx := request.WithPlayer(context.Background(), model.Player{ID: "player-1"})
 			ctx = request.WithClient(ctx, "test-client")

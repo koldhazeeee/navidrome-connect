@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useSelector } from 'react-redux'
 import { Redirect, useLocation } from 'react-router-dom'
 import {
@@ -199,6 +200,13 @@ const AlbumList = (props) => {
   const albumListType = location.pathname
     .replace(/^\/album/, '')
     .replace(/^\//, '')
+  const redirectType =
+    !location.search &&
+    (albumListType || localStorage.getItem('defaultView') || defaultAlbumList)
+  const redirectListParams = redirectType ? albumLists[redirectType] : null
+  const redirectTarget = redirectListParams
+    ? `/album/${redirectType}?${redirectListParams.params}`
+    : null
 
   // Workaround to force album columns to appear the first time.
   // See https://github.com/navidrome/navidrome/pull/923#issuecomment-833004842
@@ -219,18 +227,16 @@ const AlbumList = (props) => {
     ['createdAt', 'size'],
   )
 
-  // If it does not have filter/sort params (usually coming from Menu),
-  // reload with correct filter/sort params
-  if (!location.search) {
-    const type =
-      albumListType || localStorage.getItem('defaultView') || defaultAlbumList
-    const listParams = albumLists[type]
-    if (type === 'random') {
+  useEffect(() => {
+    if (redirectType === 'random') {
       refresh()
     }
-    if (listParams) {
-      return <Redirect to={`/album/${type}?${listParams.params}`} />
-    }
+  }, [redirectType, refresh])
+
+  // If it does not have filter/sort params (usually coming from Menu),
+  // reload with correct filter/sort params
+  if (redirectTarget) {
+    return <Redirect to={redirectTarget} />
   }
 
   return (

@@ -1,6 +1,7 @@
 export const PLAYER_ADD_TRACKS = 'PLAYER_ADD_TRACKS'
 export const PLAYER_PLAY_NEXT = 'PLAYER_PLAY_NEXT'
 export const PLAYER_SET_TRACK = 'PLAYER_SET_TRACK'
+export const PLAYER_SET_FOLLOWER_TRACK = 'PLAYER_SET_FOLLOWER_TRACK'
 export const PLAYER_SYNC_QUEUE = 'PLAYER_SYNC_QUEUE'
 export const PLAYER_CLEAR_QUEUE = 'PLAYER_CLEAR_QUEUE'
 export const PLAYER_PLAY_TRACKS = 'PLAYER_PLAY_TRACKS'
@@ -13,6 +14,12 @@ export const PLAYER_REFRESH_QUEUE = 'PLAYER_REFRESH_QUEUE'
 export const setTrack = (data) => ({
   type: PLAYER_SET_TRACK,
   data,
+})
+
+export const setFollowerTrack = (data, silentSrc) => ({
+  type: PLAYER_SET_FOLLOWER_TRACK,
+  data,
+  silentSrc,
 })
 
 export const filterSongs = (data, ids) => {

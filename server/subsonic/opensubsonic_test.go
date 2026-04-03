@@ -1,15 +1,28 @@
 package subsonic_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 
+	"github.com/navidrome/navidrome/conf"
+	"github.com/navidrome/navidrome/conf/configtest"
+	"github.com/navidrome/navidrome/server/events"
 	"github.com/navidrome/navidrome/server/subsonic"
 	"github.com/navidrome/navidrome/server/subsonic/responses"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+type opensubsonicTestBroker struct{}
+
+func (b *opensubsonicTestBroker) ServeHTTP(http.ResponseWriter, *http.Request) {}
+func (b *opensubsonicTestBroker) SendMessage(context.Context, events.Event)    {}
+func (b *opensubsonicTestBroker) SendBroadcastMessage(context.Context, events.Event) {
+}
+
+var _ events.Broker = (*opensubsonicTestBroker)(nil)
 
 var _ = Describe("GetOpenSubsonicExtensions", func() {
 	var (
@@ -19,6 +32,7 @@ var _ = Describe("GetOpenSubsonicExtensions", func() {
 	)
 
 	BeforeEach(func() {
+		DeferCleanup(configtest.SetupConfig())
 		router = subsonic.New(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 		w = httptest.NewRecorder()
 		r = httptest.NewRequest("GET", "/getOpenSubsonicExtensions?f=json", nil)
@@ -43,6 +57,21 @@ var _ = Describe("GetOpenSubsonicExtensions", func() {
 			ContainElement(responses.OpenSubsonicExtension{Name: "indexBasedQueue", Versions: []int32{1}}),
 			ContainElement(responses.OpenSubsonicExtension{Name: "transcoding", Versions: []int32{1}}),
 			ContainElement(responses.OpenSubsonicExtension{Name: "playbackReport", Versions: []int32{1}}),
+		))
+	})
+
+	It("adds connectPlayback when connect is enabled and available", func() {
+		conf.Server.Connect.Enabled = true
+		router = subsonic.New(nil, nil, nil, nil, nil, nil, nil, &opensubsonicTestBroker{}, nil, nil, nil, nil, nil, nil, nil)
+
+		router.ServeHTTP(w, r)
+
+		var response responses.JsonWrapper
+		err := json.Unmarshal(w.Body.Bytes(), &response)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(*response.Subsonic.OpenSubsonicExtensions).To(SatisfyAll(
+			HaveLen(8),
+			ContainElement(responses.OpenSubsonicExtension{Name: "connectPlayback", Versions: []int32{1}}),
 		))
 	})
 })

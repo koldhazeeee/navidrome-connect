@@ -10,6 +10,7 @@ import { all, fork } from 'redux-saga/effects'
 import { adminReducer, adminSaga, USER_LOGOUT } from 'react-admin'
 import throttle from 'lodash.throttle'
 import { loadState, saveState } from './persistState'
+import connectMiddleware from './connectMiddleware'
 
 const createAdminStore = ({
   authProvider,
@@ -48,7 +49,11 @@ const createAdminStore = ({
     resettableAppReducer,
     persistedState,
     composeEnhancers(
-      applyMiddleware(sagaMiddleware, routerMiddleware(history)),
+      applyMiddleware(
+        connectMiddleware,
+        sagaMiddleware,
+        routerMiddleware(history),
+      ),
     ),
   )
 

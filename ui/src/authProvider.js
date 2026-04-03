@@ -2,6 +2,7 @@ import { jwtDecode } from 'jwt-decode'
 import { baseUrl } from './utils'
 import config from './config'
 import { removeHomeCache } from './utils/removeHomeCache'
+import { stopEventStream } from './eventStream'
 
 // config sent from server may contain authentication info, for example when the user is authenticated
 // by a reverse proxy request header
@@ -86,6 +87,7 @@ const authProvider = {
         return verifyApiKey(response)
       })
       .then((response) => {
+        stopEventStream()
         storeAuthenticationInfo(response)
         // Avoid "going to create admin" dialog after logout/login without a refresh
         config.firstTime = false
@@ -105,6 +107,7 @@ const authProvider = {
   },
 
   logout: () => {
+    stopEventStream()
     removeItems()
     if (config.extAuthLogoutURL) {
       window.location.href = config.extAuthLogoutURL
@@ -120,6 +123,7 @@ const authProvider = {
 
   checkError: ({ status }) => {
     if (status === 401) {
+      stopEventStream()
       removeItems()
       return Promise.reject()
     }

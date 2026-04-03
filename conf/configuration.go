@@ -101,6 +101,7 @@ type configOptions struct {
 	Prometheus                      prometheusOptions   `json:",omitzero"`
 	Scanner                         scannerOptions      `json:",omitzero"`
 	Jukebox                         jukeboxOptions      `json:",omitzero"`
+	Connect                         connectOptions      `json:",omitzero"`
 	Backup                          backupOptions       `json:",omitzero"`
 	PID                             pidOptions          `json:",omitzero"`
 	Inspect                         inspectOptions      `json:",omitzero"`
@@ -219,6 +220,10 @@ type jukeboxOptions struct {
 	Devices   []AudioDeviceDefinition
 	Default   string
 	AdminOnly bool
+}
+
+type connectOptions struct {
+	Enabled bool
 }
 
 type backupOptions struct {
@@ -752,6 +757,7 @@ func setViperDefaults() {
 	viper.SetDefault("jukebox.devices", []AudioDeviceDefinition{})
 	viper.SetDefault("jukebox.default", "")
 	viper.SetDefault("jukebox.adminonly", true)
+	viper.SetDefault("connect.enabled", true)
 	viper.SetDefault("scanner.enabled", true)
 	viper.SetDefault("scanner.schedule", "0")
 	viper.SetDefault("scanner.extractor", consts.DefaultScannerExtractor)

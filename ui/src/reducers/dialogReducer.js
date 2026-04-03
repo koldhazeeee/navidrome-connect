@@ -17,6 +17,8 @@ import {
   SAVE_QUEUE_CLOSE,
   SHARE_MENU_OPEN,
   SHARE_MENU_CLOSE,
+  CONNECT_DEVICES_OPEN,
+  CONNECT_DEVICES_CLOSE,
 } from '../actions'
 
 export const shareDialogReducer = (
@@ -181,6 +183,21 @@ export const saveQueueDialogReducer = (
     case SAVE_QUEUE_OPEN:
       return { ...previousState, open: true }
     case SAVE_QUEUE_CLOSE:
+      return { ...previousState, open: false }
+    default:
+      return previousState
+  }
+}
+
+export const connectDevicesDialogReducer = (
+  previousState = { open: false },
+  payload,
+) => {
+  const { type } = payload
+  switch (type) {
+    case CONNECT_DEVICES_OPEN:
+      return { ...previousState, open: true }
+    case CONNECT_DEVICES_CLOSE:
       return { ...previousState, open: false }
     default:
       return previousState

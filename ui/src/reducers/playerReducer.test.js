@@ -4,6 +4,7 @@ import {
   PLAYER_SYNC_QUEUE,
   PLAYER_CURRENT,
   PLAYER_REFRESH_QUEUE,
+  PLAYER_SET_FOLLOWER_TRACK,
 } from '../actions'
 
 describe('playerReducer', () => {
@@ -140,6 +141,40 @@ describe('playerReducer', () => {
       const action = { type: PLAYER_REFRESH_QUEUE, data: {} }
       const result = playerReducer(state, action)
       expect(result.playIndex).toBe(0)
+    })
+  })
+
+  describe('PLAYER_SET_FOLLOWER_TRACK', () => {
+    it('replaces the queue with a silent follower track', () => {
+      const state = {
+        queue: [],
+        current: {},
+        clear: false,
+        volume: 1,
+        savedPlayIndex: 0,
+      }
+
+      const result = playerReducer(state, {
+        type: PLAYER_SET_FOLLOWER_TRACK,
+        data: {
+          id: 'song-1',
+          title: 'Follower Song',
+          artist: 'Follower Artist',
+          duration: 180,
+        },
+        silentSrc: 'blob:silent-track',
+      })
+
+      expect(result.clear).toBe(true)
+      expect(result.playIndex).toBe(0)
+      expect(result.queue).toHaveLength(1)
+      expect(result.queue[0]).toMatchObject({
+        trackId: 'song-1',
+        name: 'Follower Song',
+        singer: 'Follower Artist',
+        duration: 180,
+        musicSrc: 'blob:silent-track',
+      })
     })
   })
 })

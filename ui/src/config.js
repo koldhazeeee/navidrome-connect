@@ -31,6 +31,7 @@ const defaultConfig = {
   listenBrainzEnabled: true,
   enableExternalServices: true,
   enableCoverAnimation: true,
+  enableConnect: true,
   enableNowPlaying: true,
   devShowArtistPage: true,
   devUIShowConfig: true,
