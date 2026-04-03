@@ -185,6 +185,22 @@ describe('<ConnectDevicesDialog />', () => {
   })
 
   it('shows take over on the host row when the current device is following', async () => {
+    const audio = document.createElement('audio')
+    Object.defineProperty(audio, 'currentTime', {
+      configurable: true,
+      value: 59.194,
+      writable: true,
+    })
+    Object.defineProperty(audio, 'paused', {
+      configurable: true,
+      value: false,
+    })
+    Object.defineProperty(audio, 'ended', {
+      configurable: true,
+      value: false,
+    })
+    document.body.appendChild(audio)
+
     mocks.state.connectSession = {
       isFollower: true,
       hostDeviceId: 'host-device',
@@ -207,7 +223,7 @@ describe('<ConnectDevicesDialog />', () => {
       expect(mocks.url).toHaveBeenCalledWith('transferPlayback', null, {
         deviceId: 'current-device',
         id: 'track-1',
-        positionMs: 1500,
+        positionMs: 59194,
         startPlaying: true,
       })
     })

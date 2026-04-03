@@ -30,7 +30,6 @@ import PhoneAndroidIcon from '@material-ui/icons/PhoneAndroid'
 import PlayArrowIcon from '@material-ui/icons/PlayArrow'
 import SkipNextIcon from '@material-ui/icons/SkipNext'
 import SkipPreviousIcon from '@material-ui/icons/SkipPrevious'
-import SwapHorizIcon from '@material-ui/icons/SwapHoriz'
 import { closeConnectDevicesDialog } from '../actions'
 import { clientUniqueId, httpClient } from '../dataProvider'
 import subsonic from '../subsonic'
@@ -86,11 +85,13 @@ const useStyles = makeStyles((theme) => ({
     alignItems: 'center',
     display: 'flex',
     gap: theme.spacing(0.5),
+    justifyContent: 'center',
   },
   secondaryActions: {
-    alignItems: 'flex-end',
+    alignItems: 'center',
     display: 'flex',
     flexDirection: 'column',
+    gap: theme.spacing(0.5),
   },
   controlButton: {
     padding: 4,
@@ -102,7 +103,10 @@ const useStyles = makeStyles((theme) => ({
     marginTop: theme.spacing(0.5),
   },
   transferButton: {
-    marginLeft: theme.spacing(1),
+    minWidth: 0,
+  },
+  compactActionButton: {
+    padding: theme.spacing(0.5, 0.75),
   },
   editNicknameButton: {
     marginLeft: theme.spacing(0.5),
@@ -273,7 +277,10 @@ export const ConnectDevicesDialog = () => {
         transferOptions.startPlaying = hostDevice.nowPlaying.state === 'playing'
       }
 
-      if (isCurrentDeviceHost && currentTrack?.trackId) {
+      if (
+        (isCurrentDeviceHost || isCurrentDeviceFollower) &&
+        currentTrack?.trackId
+      ) {
         const audio = document.querySelector('audio')
         if (audio) {
           transferOptions.id = currentTrack.trackId
@@ -281,7 +288,9 @@ export const ConnectDevicesDialog = () => {
             Math.floor((audio.currentTime ?? 0) * 1000),
             0,
           )
-          transferOptions.startPlaying = !audio.paused && !audio.ended
+          if (isCurrentDeviceHost || !hostDevice?.nowPlaying) {
+            transferOptions.startPlaying = !audio.paused && !audio.ended
+          }
         }
       }
 
@@ -309,6 +318,7 @@ export const ConnectDevicesDialog = () => {
       devices,
       fetchDevices,
       hostDeviceId,
+      isCurrentDeviceFollower,
       isCurrentDeviceHost,
       notify,
     ],
@@ -522,11 +532,10 @@ export const ConnectDevicesDialog = () => {
                       )}
                       {isCurrentDeviceHost && !isThisDevice && (
                         <Button
-                          className={classes.transferButton}
+                          className={`${classes.transferButton} ${classes.compactActionButton}`}
                           color="primary"
                           onClick={() => transferPlayback(device.id)}
                           size="small"
-                          startIcon={<SwapHorizIcon />}
                           data-testid={`transfer-${device.id}`}
                           variant="outlined"
                         >
@@ -537,11 +546,10 @@ export const ConnectDevicesDialog = () => {
                       )}
                       {isCurrentDeviceFollower && isHost && (
                         <Button
-                          className={classes.transferButton}
+                          className={`${classes.transferButton} ${classes.compactActionButton}`}
                           color="primary"
                           onClick={() => transferPlayback(clientUniqueId)}
                           size="small"
-                          startIcon={<SwapHorizIcon />}
                           data-testid="take-over"
                           variant="contained"
                         >

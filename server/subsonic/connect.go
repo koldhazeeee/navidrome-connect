@@ -109,6 +109,7 @@ func (api *Router) SendConnectCommand(r *http.Request) (*responses.Subsonic, err
 	if !ok || username == "" {
 		return nil, newError(responses.ErrorGeneric, "authentication required")
 	}
+	senderDeviceID, _ := request.ClientUniqueIdFrom(ctx)
 
 	deviceID, err := params.String("deviceId")
 	if err != nil {
@@ -153,6 +154,36 @@ func (api *Router) SendConnectCommand(r *http.Request) (*responses.Subsonic, err
 		if event.TrackId == "" {
 			event.TrackId = ids[0]
 		}
+	}
+
+	if command == "setVolume" && senderDeviceID != "" && senderDeviceID == deviceID {
+		hostState := api.connectDevices.GetHost(username)
+		if hostState == nil || hostState.DeviceId != deviceID {
+			return newResponse(), nil
+		}
+
+		for _, device := range api.connectDevices.GetDevicesForUser(username) {
+			if device.ClientUniqueId == deviceID {
+				continue
+			}
+			followerCtx := request.WithUsername(ctx, username)
+			followerCtx = request.WithTargetClientUniqueId(followerCtx, device.ClientUniqueId)
+			api.broker.SendMessage(followerCtx, &events.ConnectCommand{
+				ForUser:        username,
+				TargetDeviceId: device.ClientUniqueId,
+				Command:        event.Command,
+				PositionMs:     event.PositionMs,
+				Volume:         event.Volume,
+				TrackId:        event.TrackId,
+				TrackIds:       event.TrackIds,
+				SelectedId:     event.SelectedId,
+				StartPlaying:   event.StartPlaying,
+				HostDeviceId:   event.HostDeviceId,
+				PlayMode:       event.PlayMode,
+			})
+		}
+
+		return newResponse(), nil
 	}
 
 	targetCtx := request.WithUsername(ctx, username)
@@ -231,7 +262,7 @@ func (api *Router) TransferPlayback(r *http.Request) (*responses.Subsonic, error
 		api.broker.SendMessage(stopCtx, &events.ConnectCommand{
 			ForUser:        username,
 			TargetDeviceId: sourceDeviceID,
-			Command:        "stop",
+			Command:        "pause",
 		})
 	}
 

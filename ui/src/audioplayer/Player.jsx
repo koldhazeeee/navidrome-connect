@@ -29,7 +29,7 @@ import {
   syncQueue,
 } from '../actions'
 import PlayerToolbar from './PlayerToolbar'
-import { httpClient } from '../dataProvider'
+import { clientUniqueId, httpClient } from '../dataProvider'
 import { sendNotification } from '../utils'
 import subsonic from '../subsonic'
 import locale from './locale'
@@ -156,18 +156,94 @@ const Player = () => {
     }
   }, [])
 
+  const getCurrentAudioElement = useCallback(
+    () => document.querySelector('audio') || audioInstance,
+    [audioInstance],
+  )
+
+  const primeAudioPosition = useCallback(
+    (targetSeconds) => {
+      const desiredTime = Math.max(targetSeconds ?? 0, 0)
+
+      window.requestAnimationFrame(() => {
+        const audio = getCurrentAudioElement()
+        if (!audio) {
+          return
+        }
+        try {
+          audio.currentTime = desiredTime
+        } catch {
+          // Ignore eager seeks before the replacement source is seekable.
+        }
+      })
+    },
+    [getCurrentAudioElement],
+  )
+
   const waitForAudioReady = useCallback(
     (callback) => {
-      const interval = window.setInterval(() => {
-        const audio = audioInstance || document.querySelector('audio')
-        if (audio && audio.readyState >= 2) {
-          window.clearInterval(interval)
-          callback(audio)
+      let rafId = 0
+      let timeoutId = 0
+      let observedAudio = null
+
+      const readyEvents = [
+        'canplay',
+        'canplaythrough',
+        'loadeddata',
+        'loadedmetadata',
+      ]
+
+      const removeListeners = () => {
+        if (!observedAudio) {
+          return
         }
-      }, 100)
-      window.setTimeout(() => window.clearInterval(interval), 10000)
+        readyEvents.forEach((eventName) => {
+          observedAudio.removeEventListener(eventName, handleReady)
+        })
+      }
+
+      const cleanup = () => {
+        window.cancelAnimationFrame(rafId)
+        window.clearTimeout(timeoutId)
+        removeListeners()
+      }
+
+      const finish = (audio) => {
+        cleanup()
+        callback(audio)
+      }
+
+      function handleReady() {
+        const audio = getCurrentAudioElement()
+        if (audio) {
+          finish(audio)
+        }
+      }
+
+      const watch = () => {
+        const audio = getCurrentAudioElement()
+        if (audio !== observedAudio) {
+          removeListeners()
+          observedAudio = audio
+          if (observedAudio) {
+            readyEvents.forEach((eventName) => {
+              observedAudio.addEventListener(eventName, handleReady)
+            })
+          }
+        }
+
+        if (audio && audio.readyState >= 2) {
+          finish(audio)
+          return
+        }
+
+        rafId = window.requestAnimationFrame(watch)
+      }
+
+      rafId = window.requestAnimationFrame(watch)
+      timeoutId = window.setTimeout(cleanup, 10000)
     },
-    [audioInstance],
+    [getCurrentAudioElement],
   )
 
   const sendCommandToHost = useCallback(
@@ -186,6 +262,20 @@ const Player = () => {
     },
     [connectSession?.hostDeviceId],
   )
+
+  const sendCommandToFollowers = useCallback((command, params = {}) => {
+    if (!config.enableConnect || !clientUniqueId) {
+      return
+    }
+    const apiUrl = subsonic.url('sendConnectCommand', null, {
+      deviceId: clientUniqueId,
+      command,
+      ...params,
+    })
+    if (apiUrl) {
+      httpClient(apiUrl).catch(() => {})
+    }
+  }, [])
 
   const reportPlayback = useCallback((trackId, currentTime, state) => {
     if (!trackId) {
@@ -238,8 +328,14 @@ const Player = () => {
     if (!audioInstance) {
       return
     }
-    audioInstance.muted = connectSession?.isFollower === true
-  }, [audioInstance, connectSession?.isFollower])
+    withSuppressedConnectForwarding(() => {
+      audioInstance.muted = connectSession?.isFollower === true
+    })
+  }, [
+    audioInstance,
+    connectSession?.isFollower,
+    withSuppressedConnectForwarding,
+  ])
 
   useEffect(() => {
     if (gainNode) {
@@ -275,6 +371,9 @@ const Player = () => {
         .getOne('song', { id: trackId })
         .then(({ data }) => {
           dispatch(setTrack(data))
+          if (command.positionMs != null) {
+            primeAudioPosition(command.positionMs / 1000)
+          }
           waitForAudioReady((audio) => onReady(audio, data))
         })
         .catch(() => {})
@@ -291,15 +390,17 @@ const Player = () => {
       }
       followerTrackRef.current = null
       loadTrack(command.trackId, (audio) => {
-        audio.muted = false
-        if (command.positionMs != null) {
-          audio.currentTime = command.positionMs / 1000
-        }
-        if (command.startPlaying === false) {
-          audio.pause()
-        } else {
-          audio.play().catch(() => {})
-        }
+        withSuppressedConnectForwarding(() => {
+          audio.muted = false
+          if (command.positionMs != null) {
+            audio.currentTime = command.positionMs / 1000
+          }
+          if (command.startPlaying === false) {
+            audio.pause()
+          } else {
+            audio.play().catch(() => {})
+          }
+        })
       })
       return
     }
@@ -359,7 +460,12 @@ const Player = () => {
         break
       case 'setVolume':
         if (command.volume != null) {
-          audioInstance.volume = Math.max(0, Math.min(1, command.volume / 100))
+          withSuppressedConnectForwarding(() => {
+            audioInstance.volume = Math.max(
+              0,
+              Math.min(1, command.volume / 100),
+            )
+          })
         }
         break
       case 'setPlayMode':
@@ -382,7 +488,9 @@ const Player = () => {
     connectCommand?.seq,
     dataProvider,
     dispatch,
+    primeAudioPosition,
     waitForAudioReady,
+    withSuppressedConnectForwarding,
   ])
 
   useEffect(() => {
@@ -413,11 +521,7 @@ const Player = () => {
           silentBlobRef.current = createSilentBlobUrl(data.duration || 300)
           dispatch(setFollowerTrack(data, silentBlobRef.current))
           setSongDocumentTitle(data)
-          if (audioInstance) {
-            withSuppressedConnectForwarding(() => {
-              audioInstance.currentTime = 0
-            })
-          }
+          primeAudioPosition(Math.max(connectSession.positionMs ?? 0, 0) / 1000)
           waitForAudioReady((audio) => {
             withSuppressedConnectForwarding(() => {
               const desiredTime =
@@ -495,6 +599,7 @@ const Player = () => {
     connectSession?.trackId,
     dataProvider,
     dispatch,
+    primeAudioPosition,
     setSongDocumentTitle,
     waitForAudioReady,
     withSuppressedConnectForwarding,
@@ -645,18 +750,28 @@ const Player = () => {
   const onAudioVolumeChange = useCallback(
     // sqrt to compensate for the logarithmic volume
     (volume) => {
-      const normalizedVolume = Math.sqrt(volume)
+      const volumeBarValue = Math.sqrt(volume)
       if (connectSession?.isFollower) {
         if (!suppressConnectForwardRef.current) {
           sendCommandToHost('setVolume', {
-            volume: Math.round(normalizedVolume * 100),
+            volume: Math.round(volume * 100),
           })
         }
         return
       }
-      dispatch(setVolume(normalizedVolume))
+      if (!suppressConnectForwardRef.current) {
+        sendCommandToFollowers('setVolume', {
+          volume: Math.round(volume * 100),
+        })
+      }
+      dispatch(setVolume(volumeBarValue))
     },
-    [connectSession?.isFollower, dispatch, sendCommandToHost],
+    [
+      connectSession?.isFollower,
+      dispatch,
+      sendCommandToFollowers,
+      sendCommandToHost,
+    ],
   )
 
   const onAudioPlay = useCallback(

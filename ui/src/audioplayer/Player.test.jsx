@@ -2,6 +2,7 @@ import React from 'react'
 import { act, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Player } from './Player'
+import { httpClient } from '../dataProvider'
 import subsonic from '../subsonic'
 import { decisionService } from '../transcode'
 
@@ -93,8 +94,14 @@ vi.mock('navidrome-music-player', () => ({
   },
 }))
 
+vi.mock('../dataProvider', () => ({
+  clientUniqueId: 'current-device',
+  httpClient: vi.fn(() => Promise.resolve({})),
+}))
+
 vi.mock('../subsonic', () => ({
   default: {
+    url: vi.fn(() => '/rest/sendConnectCommand.view'),
     reportPlayback: vi.fn(),
     scrobble: vi.fn(),
   },
@@ -191,6 +198,7 @@ describe('<Player />', () => {
     mockState.connectCommand = null
     mockState.connectSession = createConnectSession()
     document.title = 'Navidrome'
+    httpClient.mockResolvedValue({})
   })
 
   const renderPlayer = async () => {
@@ -268,6 +276,64 @@ describe('<Player />', () => {
       1.0,
       true,
     )
+  })
+
+  it('forwards follower volume changes using listening volume', async () => {
+    mockState.connectSession = {
+      ...createConnectSession(),
+      isFollower: true,
+      hostDeviceId: 'host-device',
+    }
+
+    await renderPlayer()
+
+    act(() => {
+      playerProps.onAudioVolumeChange(0.1849)
+    })
+
+    expect(subsonic.url).toHaveBeenCalledWith('sendConnectCommand', null, {
+      deviceId: 'host-device',
+      command: 'setVolume',
+      volume: 18,
+    })
+    expect(httpClient).toHaveBeenCalledWith('/rest/sendConnectCommand.view')
+  })
+
+  it('broadcasts host volume changes to followers through connect commands', async () => {
+    await renderPlayer()
+    subsonic.url.mockClear()
+    httpClient.mockClear()
+
+    act(() => {
+      playerProps.onAudioVolumeChange(0.25)
+    })
+
+    expect(subsonic.url).toHaveBeenCalledWith('sendConnectCommand', null, {
+      deviceId: 'current-device',
+      command: 'setVolume',
+      volume: 25,
+    })
+    expect(httpClient).toHaveBeenCalledWith('/rest/sendConnectCommand.view')
+  })
+
+  it('applies incoming setVolume commands as listening volume', async () => {
+    mockState.connectSession = {
+      ...createConnectSession(),
+      isFollower: true,
+      hostDeviceId: 'host-device',
+    }
+    mockState.connectCommand = {
+      command: { command: 'setVolume', volume: 25 },
+      seq: 1,
+    }
+
+    await renderPlayer()
+
+    act(() => {
+      playerProps.getAudioInstance(mockAudioInstance)
+    })
+
+    await waitFor(() => expect(mockAudioInstance.volume).toBe(0.25))
   })
 
   it('prefetches the next song without crashing when the current track is missing', async () => {
@@ -382,5 +448,59 @@ describe('<Player />', () => {
     await waitFor(() => expect(mockAudioInstance.currentTime).toBe(48.437))
     await waitFor(() => expect(mockAudioInstance.play).toHaveBeenCalled())
     await waitFor(() => expect(mockAudioInstance.paused).toBe(false))
+  })
+
+  it('does not reset follower progress to zero before seeking to a followed mid-track position', async () => {
+    const assignedTimes = []
+    let trackedCurrentTime = 91.7
+    const trackedAudioInstance = {
+      ...mockAudioInstance,
+      get currentTime() {
+        return trackedCurrentTime
+      },
+      set currentTime(value) {
+        assignedTimes.push(value)
+        trackedCurrentTime = value
+      },
+    }
+
+    trackedAudioInstance.paused = true
+    trackedAudioInstance.readyState = 3
+    trackedAudioInstance.play = vi.fn(() => {
+      trackedAudioInstance.paused = false
+      return Promise.resolve()
+    })
+    trackedAudioInstance.pause = vi.fn(() => {
+      trackedAudioInstance.paused = true
+    })
+
+    mockState.connectSession = {
+      isFollower: true,
+      hostDeviceId: 'host-device',
+      trackId: 'track-2',
+      positionMs: 48437,
+      state: 'playing',
+      title: 'Lean Wit Me',
+      artist: 'Juice WRLD',
+      playMode: 'order',
+    }
+    mockDataProvider.getOne.mockResolvedValueOnce({
+      data: {
+        id: 'track-2',
+        title: 'Lean Wit Me',
+        artist: 'Juice WRLD',
+        album: 'Album',
+        duration: 215,
+      },
+    })
+
+    await renderPlayer()
+
+    act(() => {
+      playerProps.getAudioInstance(trackedAudioInstance)
+    })
+
+    await waitFor(() => expect(trackedCurrentTime).toBe(48.437))
+    expect(assignedTimes).not.toContain(0)
   })
 })

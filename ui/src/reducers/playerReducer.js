@@ -117,10 +117,54 @@ const reducePlayTracks = (state, { data, id }) => {
   }
 }
 
+const getCurrentTrackQueueItem = (state, trackId) => {
+  const currentUuid = state.current?.uuid
+  if (currentUuid) {
+    const currentQueueItem = state.queue.find(
+      (item) => item.uuid === currentUuid,
+    )
+    if (currentQueueItem?.trackId === trackId) {
+      return currentQueueItem
+    }
+  }
+
+  return state.queue.find((item) => item.trackId === trackId)
+}
+
+const getReusableTrackUuid = (state, trackId, nextMusicSrc) => {
+  const currentTrack = getCurrentTrackQueueItem(state, trackId)
+  if (!currentTrack?.uuid) {
+    return undefined
+  }
+
+  const currentMusicSrc =
+    state.current?.uuid === currentTrack.uuid &&
+    state.current?.trackId === trackId
+      ? (state.current.musicSrc ?? currentTrack.musicSrc)
+      : currentTrack.musicSrc
+
+  const isFollowerSilentSrc =
+    typeof currentMusicSrc === 'string' && currentMusicSrc.startsWith('blob:')
+
+  if (isFollowerSilentSrc && currentMusicSrc !== nextMusicSrc) {
+    return undefined
+  }
+
+  return currentTrack.uuid
+}
+
 const reduceSetTrack = (state, { data }) => {
+  const trackId = data.mediaFileId || data.id
+  const nextTrack = mapToAudioLists(data)
+  const existingUuid = getReusableTrackUuid(state, trackId, nextTrack.musicSrc)
+
+  if (existingUuid) {
+    nextTrack.uuid = existingUuid
+  }
+
   return {
     ...state,
-    queue: [mapToAudioLists(data)],
+    queue: [nextTrack],
     playIndex: 0,
     clear: true,
   }
@@ -128,12 +172,13 @@ const reduceSetTrack = (state, { data }) => {
 
 const reduceSetFollowerTrack = (state, { data, silentSrc }) => {
   const trackId = data.mediaFileId || data.id
+  const existingUuid = getReusableTrackUuid(state, trackId, silentSrc)
   return {
     ...state,
     queue: [
       {
         trackId,
-        uuid: uuidv4(),
+        uuid: existingUuid || uuidv4(),
         song: data,
         name: data.title,
         singer: data.artist,

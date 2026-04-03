@@ -262,6 +262,69 @@ var _ = Describe("Connect endpoints", func() {
 		})))
 	})
 
+	It("broadcasts host volume changes to every follower without echoing back to the host", func() {
+		devices.OnDeviceConnected("alice", "host-device")
+		devices.OnDeviceConnected("alice", "follower-1")
+		devices.OnDeviceConnected("alice", "follower-2")
+		devices.SetHost("alice", coreconnect.HostState{
+			DeviceId:   "host-device",
+			TrackId:    "track-1",
+			PositionMs: 12000,
+			Playing:    true,
+		})
+
+		ctx := request.WithClientUniqueId(baseCtx, "host-device")
+		req := httptest.NewRequest(
+			"GET",
+			"/rest/sendConnectCommand.view?deviceId=host-device&command=setVolume&volume=25",
+			nil,
+		).WithContext(ctx)
+
+		resp, err := api.SendConnectCommand(req)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resp).NotTo(BeNil())
+		Expect(broker.snapshot()).To(HaveLen(2))
+
+		commandsByTarget := map[string]*events.ConnectCommand{}
+		for _, message := range broker.snapshot() {
+			targetClientUniqueId, ok := request.TargetClientUniqueIdFrom(message.ctx)
+			Expect(ok).To(BeTrue())
+			commandsByTarget[targetClientUniqueId] = message.event
+		}
+
+		Expect(commandsByTarget).NotTo(HaveKey("host-device"))
+		Expect(commandsByTarget["follower-1"]).To(PointTo(MatchFields(IgnoreExtras, Fields{
+			"ForUser":        Equal("alice"),
+			"TargetDeviceId": Equal("follower-1"),
+			"Command":        Equal("setVolume"),
+			"Volume":         PointTo(Equal(25)),
+		})))
+		Expect(commandsByTarget["follower-2"]).To(PointTo(MatchFields(IgnoreExtras, Fields{
+			"ForUser":        Equal("alice"),
+			"TargetDeviceId": Equal("follower-2"),
+			"Command":        Equal("setVolume"),
+			"Volume":         PointTo(Equal(25)),
+		})))
+	})
+
+	It("ignores self-targeted volume sync when the sender is not the active host", func() {
+		devices.OnDeviceConnected("alice", "solo-device")
+
+		ctx := request.WithClientUniqueId(baseCtx, "solo-device")
+		req := httptest.NewRequest(
+			"GET",
+			"/rest/sendConnectCommand.view?deviceId=solo-device&command=setVolume&volume=25",
+			nil,
+		).WithContext(ctx)
+
+		resp, err := api.SendConnectCommand(req)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resp).NotTo(BeNil())
+		Expect(broker.snapshot()).To(BeEmpty())
+	})
+
 	It("transfers playback by promoting the target and updating all remaining devices", func() {
 		devices.OnDeviceConnected("alice", "host-device")
 		devices.OnDeviceConnected("alice", "target-device")
@@ -310,7 +373,7 @@ var _ = Describe("Connect endpoints", func() {
 			"StartPlaying": BeTrue(),
 		}))))
 		Expect(commandsByTarget["host-device"]).To(ContainElement(PointTo(MatchFields(IgnoreExtras, Fields{
-			"Command": Equal("stop"),
+			"Command": Equal("pause"),
 		}))))
 		Expect(commandsByTarget["host-device"]).To(ContainElement(PointTo(MatchFields(IgnoreExtras, Fields{
 			"Command":      Equal("becomeFollower"),
@@ -376,7 +439,7 @@ var _ = Describe("Connect endpoints", func() {
 			"StartPlaying": BeTrue(),
 		}))))
 		Expect(commandsByTarget["host-device"]).To(ContainElement(PointTo(MatchFields(IgnoreExtras, Fields{
-			"Command": Equal("stop"),
+			"Command": Equal("pause"),
 		}))))
 		Expect(commandsByTarget["host-device"]).To(ContainElement(PointTo(MatchFields(IgnoreExtras, Fields{
 			"Command":      Equal("becomeFollower"),

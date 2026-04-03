@@ -4,6 +4,7 @@ import {
   PLAYER_SYNC_QUEUE,
   PLAYER_CURRENT,
   PLAYER_REFRESH_QUEUE,
+  PLAYER_SET_TRACK,
   PLAYER_SET_FOLLOWER_TRACK,
 } from '../actions'
 
@@ -175,6 +176,135 @@ describe('playerReducer', () => {
         duration: 180,
         musicSrc: 'blob:silent-track',
       })
+    })
+
+    it('preserves the current uuid when the follower handoff keeps the same track', () => {
+      const state = {
+        queue: [
+          {
+            trackId: 'song-1',
+            uuid: 'current-uuid',
+            name: 'Existing Song',
+            musicSrc: '/stream/song-1',
+          },
+        ],
+        current: { uuid: 'current-uuid', trackId: 'song-1' },
+        clear: false,
+        volume: 1,
+        savedPlayIndex: 0,
+      }
+
+      const result = playerReducer(state, {
+        type: PLAYER_SET_FOLLOWER_TRACK,
+        data: {
+          id: 'song-1',
+          title: 'Follower Song',
+          artist: 'Follower Artist',
+          duration: 180,
+        },
+        silentSrc: 'blob:silent-track',
+      })
+
+      expect(result.queue[0].uuid).toBe('current-uuid')
+    })
+  })
+
+  describe('PLAYER_SET_TRACK', () => {
+    it('replaces the current uuid when promoting a silent follower track back to host playback', () => {
+      const state = {
+        queue: [
+          {
+            trackId: 'song-1',
+            uuid: 'current-uuid',
+            name: 'Follower Song',
+            musicSrc: 'blob:silent-track',
+          },
+        ],
+        current: { uuid: 'current-uuid', trackId: 'song-1' },
+        clear: false,
+        volume: 1,
+        savedPlayIndex: 0,
+      }
+
+      const result = playerReducer(state, {
+        type: PLAYER_SET_TRACK,
+        data: {
+          id: 'song-1',
+          title: 'Host Song',
+          artist: 'Host Artist',
+          duration: 180,
+        },
+      })
+
+      expect(result.queue[0].uuid).not.toBe('current-uuid')
+      expect(result.queue[0]).toMatchObject({
+        trackId: 'song-1',
+        name: 'Host Song',
+        singer: 'Host Artist',
+        duration: 180,
+      })
+    })
+
+    it('preserves the current uuid when refreshing the same host track', () => {
+      const state = {
+        queue: [
+          {
+            trackId: 'song-1',
+            uuid: 'current-uuid',
+            name: 'Host Song',
+            musicSrc: '/stream/song-1',
+          },
+        ],
+        current: { uuid: 'current-uuid', trackId: 'song-1' },
+        clear: false,
+        volume: 1,
+        savedPlayIndex: 0,
+      }
+
+      const result = playerReducer(state, {
+        type: PLAYER_SET_TRACK,
+        data: {
+          id: 'song-1',
+          title: 'Host Song',
+          artist: 'Host Artist',
+          duration: 180,
+        },
+      })
+
+      expect(result.queue[0].uuid).toBe('current-uuid')
+    })
+
+    it('preserves the current uuid when the live current source is already the real stream', () => {
+      const state = {
+        queue: [
+          {
+            trackId: 'song-1',
+            uuid: 'current-uuid',
+            name: 'Follower Song',
+            musicSrc: 'blob:silent-track',
+          },
+        ],
+        current: {
+          uuid: 'current-uuid',
+          trackId: 'song-1',
+          musicSrc: '/stream/song-1',
+        },
+        clear: false,
+        volume: 1,
+        savedPlayIndex: 0,
+      }
+
+      const result = playerReducer(state, {
+        type: PLAYER_SET_TRACK,
+        data: {
+          id: 'song-1',
+          title: 'Host Song',
+          artist: 'Host Artist',
+          duration: 180,
+        },
+      })
+
+      expect(result.queue[0].uuid).toBe('current-uuid')
     })
   })
 })
