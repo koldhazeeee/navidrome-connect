@@ -34,6 +34,12 @@ import keyHandlers from './keyHandlers'
 import { calculateGain } from '../utils/calculateReplayGain'
 import { detectBrowserProfile, decisionService } from '../transcode'
 
+const blurActiveSeekHandler = () => {
+  if (document.activeElement?.classList?.contains('rc-slider-handle')) {
+    document.activeElement.blur()
+  }
+}
+
 const Player = () => {
   const theme = useCurrentTheme()
   const translate = useTranslate()
@@ -272,6 +278,11 @@ const Player = () => {
     [dispatch],
   )
 
+  useEffect(() => {
+    window.addEventListener('blur', blurActiveSeekHandler)
+    return () => window.removeEventListener('blur', blurActiveSeekHandler)
+  }, [])
+
   const onAudioPlay = useCallback(
     (info) => {
       // Do this to start the context; on chrome-based browsers, the context
@@ -396,6 +407,7 @@ const Player = () => {
         onAudioListsChange={onAudioListsChange}
         onAudioVolumeChange={onAudioVolumeChange}
         onAudioProgress={onAudioProgress}
+        onAudioSeeked={blurActiveSeekHandler}
         onAudioPlay={onAudioPlay}
         onAudioPlayTrackChange={onAudioPlayTrackChange}
         onAudioPause={onAudioPause}
