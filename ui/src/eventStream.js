@@ -3,13 +3,22 @@ import throttle from 'lodash.throttle'
 import { processEvent, serverDown, streamReconnected } from './actions'
 import { REST_URL } from './consts'
 import config from './config'
+import { clientUniqueId } from './dataProvider'
 import connectDebug from './utils/connectDebug'
 
+const clientUniqueIdQueryParam = 'X-ND-Client-Unique-Id'
+
 const newEventStream = async () => {
-  let url = baseUrl(`${REST_URL}/events`)
-  if (localStorage.getItem('token')) {
-    url = url + `?jwt=${localStorage.getItem('token')}`
+  const params = new URLSearchParams()
+  const token = localStorage.getItem('token')
+  if (token) {
+    params.set('jwt', token)
   }
+  if (clientUniqueId) {
+    params.set(clientUniqueIdQueryParam, clientUniqueId)
+  }
+  const query = params.toString()
+  const url = baseUrl(`${REST_URL}/events${query ? `?${query}` : ''}`)
   return new EventSource(url)
 }
 

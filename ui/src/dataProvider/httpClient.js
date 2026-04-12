@@ -7,11 +7,21 @@ import { removeHomeCache } from '../utils/removeHomeCache'
 
 const customAuthorizationHeader = 'X-ND-Authorization'
 const clientUniqueIdHeader = 'X-ND-Client-Unique-Id'
+
+const getClientIdStorage = () => {
+  try {
+    return window.sessionStorage
+  } catch {
+    return null
+  }
+}
+
+const clientIdStorage = getClientIdStorage()
 const clientUniqueId =
-  localStorage.getItem('clientUniqueId') ||
+  clientIdStorage?.getItem('clientUniqueId') ||
   (() => {
     const id = uuidv4()
-    localStorage.setItem('clientUniqueId', id)
+    clientIdStorage?.setItem('clientUniqueId', id)
     return id
   })()
 

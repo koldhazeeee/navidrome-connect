@@ -181,6 +181,10 @@ vi.mock('./useTabSwitchSeekGuard', () => ({
 describe('<Player />', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    Object.defineProperty(document, 'hidden', {
+      configurable: true,
+      value: false,
+    })
     playerProps = undefined
     mockDataProvider.getOne.mockResolvedValue({ data: {} })
     mockAudioInstance.currentTime = 0
@@ -249,6 +253,114 @@ describe('<Player />', () => {
     )
   })
 
+  it('does not forward follower pause events while the tab is hidden', async () => {
+    mockState.connectSession = {
+      ...createConnectSession(),
+      isFollower: true,
+      hostDeviceId: 'host-device',
+    }
+
+    await renderPlayer()
+    Object.defineProperty(document, 'hidden', {
+      configurable: true,
+      value: true,
+    })
+
+    act(() => {
+      playerProps.onAudioPause({
+        trackId: 'track-1',
+        currentTime: 12.3,
+        isRadio: false,
+      })
+    })
+
+    expect(subsonic.url).not.toHaveBeenCalled()
+    expect(httpClient).not.toHaveBeenCalled()
+  })
+
+  it('does not forward pause or stop during follower transfer handoff', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000)
+    mockState.connectSession = {
+      ...createConnectSession(),
+      isFollower: true,
+      hostDeviceId: 'new-host-device',
+      trackId: 'track-2',
+      positionMs: 48437,
+      state: 'playing',
+      title: 'Lean Wit Me',
+      artist: 'Juice WRLD',
+      playMode: 'order',
+    }
+    mockDataProvider.getOne.mockResolvedValueOnce({
+      data: {
+        id: 'track-2',
+        title: 'Lean Wit Me',
+        artist: 'Juice WRLD',
+        album: 'Album',
+        duration: 215,
+      },
+    })
+
+    try {
+      await renderPlayer()
+      await waitFor(() => expect(mockDataProvider.getOne).toHaveBeenCalled())
+
+      act(() => {
+        playerProps.onAudioPause({
+          trackId: 'track-2',
+          currentTime: 48.437,
+          isRadio: false,
+        })
+        playerProps.onAudioEnded('uuid-1', [], {
+          trackId: 'track-2',
+          currentTime: 48.437,
+          isRadio: false,
+        })
+      })
+
+      expect(subsonic.url).not.toHaveBeenCalled()
+      expect(httpClient).not.toHaveBeenCalled()
+    } finally {
+      nowSpy.mockRestore()
+    }
+  })
+
+  it('resumes a paused follower when the tab becomes visible again', async () => {
+    const nowSpy = vi.spyOn(Date, 'now')
+    mockState.connectSession = {
+      ...createConnectSession(),
+      isFollower: true,
+      hostDeviceId: 'host-device',
+      trackId: 'track-1',
+      positionMs: 12000,
+      state: 'playing',
+    }
+
+    mockAudioInstance.paused = true
+    nowSpy.mockReturnValue(1000)
+
+    await renderPlayer()
+
+    act(() => {
+      playerProps.getAudioInstance(mockAudioInstance)
+    })
+
+    nowSpy.mockReturnValue(6000)
+    Object.defineProperty(document, 'hidden', {
+      configurable: true,
+      value: false,
+    })
+
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+
+    await waitFor(() => expect(mockAudioInstance.currentTime).toBe(17))
+    await waitFor(() => expect(mockAudioInstance.play).toHaveBeenCalled())
+
+    nowSpy.mockRestore()
+  })
+
   it('reports seek position changes', async () => {
     await renderPlayer()
     const initialOnAudioSeeked = playerProps.onAudioSeeked
@@ -276,6 +388,130 @@ describe('<Player />', () => {
       1.0,
       true,
     )
+  })
+
+  it('reports playback after applying a remote seek command on the host', async () => {
+    mockState.connectCommand = {
+      command: { command: 'seek', positionMs: 45000 },
+      seq: 1,
+    }
+
+    await renderPlayer()
+    subsonic.reportPlayback.mockClear()
+
+    act(() => {
+      playerProps.getAudioInstance(mockAudioInstance)
+    })
+
+    await waitFor(() => expect(mockAudioInstance.currentTime).toBe(45))
+    expect(subsonic.reportPlayback).toHaveBeenCalledWith(
+      'track-1',
+      45000,
+      'playing',
+      1.0,
+      true,
+    )
+  })
+
+  it('starts becomeHost playback while the tab is hidden', async () => {
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation(() => 1)
+    mockState.connectCommand = {
+      command: {
+        command: 'becomeHost',
+        trackId: 'track-1',
+        positionMs: 1234,
+        startPlaying: true,
+      },
+      seq: 1,
+    }
+    mockDataProvider.getOne.mockResolvedValueOnce({
+      data: {
+        id: 'track-1',
+        title: 'Song',
+        artist: 'Artist',
+        album: 'Album',
+        duration: 180,
+      },
+    })
+    Object.defineProperty(document, 'hidden', {
+      configurable: true,
+      value: true,
+    })
+
+    try {
+      await renderPlayer()
+
+      act(() => {
+        playerProps.getAudioInstance(mockAudioInstance)
+      })
+
+      await waitFor(() => expect(mockAudioInstance.play).toHaveBeenCalled())
+      await waitFor(() => expect(mockAudioInstance.currentTime).toBe(1.234))
+    } finally {
+      requestAnimationFrameSpy.mockRestore()
+    }
+  })
+
+  it('does not replay a stale becomeHost command after a local host track change', async () => {
+    let resolveTrack
+    mockState.connectCommand = {
+      command: {
+        command: 'becomeHost',
+        trackId: 'track-1',
+        positionMs: 0,
+        startPlaying: true,
+      },
+      seq: 1,
+    }
+    mockDataProvider.getOne.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveTrack = resolve
+      }),
+    )
+
+    const view = render(<Player />)
+    await waitFor(() => expect(playerProps).toBeDefined())
+    await waitFor(() =>
+      expect(mockDataProvider.getOne).toHaveBeenCalledTimes(1),
+    )
+
+    mockState.player = {
+      ...createPlayerState(),
+      queue: [
+        {
+          uuid: 'uuid-2',
+          trackId: 'track-2',
+          isRadio: false,
+          song: { title: 'Other Song', artist: 'Artist', album: 'Album' },
+        },
+      ],
+      current: {
+        uuid: 'uuid-2',
+        trackId: 'track-2',
+        isRadio: false,
+        song: { title: 'Other Song', artist: 'Artist', album: 'Album' },
+      },
+      playIndex: 0,
+      savedPlayIndex: 0,
+    }
+
+    view.rerender(<Player />)
+
+    await waitFor(() =>
+      expect(mockDataProvider.getOne).toHaveBeenCalledTimes(1),
+    )
+
+    resolveTrack({
+      data: {
+        id: 'track-1',
+        title: 'Song',
+        artist: 'Artist',
+        album: 'Album',
+        duration: 180,
+      },
+    })
   })
 
   it('forwards follower volume changes using listening volume', async () => {
@@ -410,6 +646,7 @@ describe('<Player />', () => {
   })
 
   it('mutes follower audio so joined sessions can start playing automatically', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000)
     mockState.connectSession = {
       isFollower: true,
       hostDeviceId: 'host-device',
@@ -438,19 +675,26 @@ describe('<Player />', () => {
       return Promise.resolve()
     })
 
-    await renderPlayer()
+    try {
+      await renderPlayer()
 
-    act(() => {
-      playerProps.getAudioInstance(mockAudioInstance)
-    })
+      act(() => {
+        playerProps.getAudioInstance(mockAudioInstance)
+      })
 
-    await waitFor(() => expect(mockAudioInstance.muted).toBe(true))
-    await waitFor(() => expect(mockAudioInstance.currentTime).toBe(48.437))
-    await waitFor(() => expect(mockAudioInstance.play).toHaveBeenCalled())
-    await waitFor(() => expect(mockAudioInstance.paused).toBe(false))
+      await waitFor(() => expect(mockAudioInstance.muted).toBe(true))
+      await waitFor(() =>
+        expect(mockAudioInstance.currentTime).toBeCloseTo(48.437, 3),
+      )
+      await waitFor(() => expect(mockAudioInstance.play).toHaveBeenCalled())
+      await waitFor(() => expect(mockAudioInstance.paused).toBe(false))
+    } finally {
+      nowSpy.mockRestore()
+    }
   })
 
   it('does not reset follower progress to zero before seeking to a followed mid-track position', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000)
     const assignedTimes = []
     let trackedCurrentTime = 91.7
     const trackedAudioInstance = {
@@ -494,13 +738,17 @@ describe('<Player />', () => {
       },
     })
 
-    await renderPlayer()
+    try {
+      await renderPlayer()
 
-    act(() => {
-      playerProps.getAudioInstance(trackedAudioInstance)
-    })
+      act(() => {
+        playerProps.getAudioInstance(trackedAudioInstance)
+      })
 
-    await waitFor(() => expect(trackedCurrentTime).toBe(48.437))
-    expect(assignedTimes).not.toContain(0)
+      await waitFor(() => expect(trackedCurrentTime).toBeCloseTo(48.437, 3))
+      expect(assignedTimes).not.toContain(0)
+    } finally {
+      nowSpy.mockRestore()
+    }
   })
 })

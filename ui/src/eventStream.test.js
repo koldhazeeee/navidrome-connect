@@ -1,4 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('./dataProvider', () => ({
+  clientUniqueId: 'tab-device-1',
+}))
+
 import { startEventStream } from './eventStream'
 import { processEvent, serverDown } from './actions'
 import config from './config'
@@ -66,6 +71,16 @@ describe('startEventStream', () => {
 
     expect(firstInstance.readyState).toBe(2)
     expect(secondInstance.url).toContain('jwt=def')
+  })
+
+  it('includes the client unique id in the event stream URL', async () => {
+    await startEventStream(dispatch)
+
+    const streamUrl = new URL(instance.url, 'http://localhost')
+    expect(streamUrl.searchParams.get('jwt')).toBe('abc')
+    expect(streamUrl.searchParams.get('X-ND-Client-Unique-Id')).toBe(
+      'tab-device-1',
+    )
   })
 
   it('ignores connect events for a different user', async () => {

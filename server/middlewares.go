@@ -127,25 +127,32 @@ func compressMiddleware() func(http.Handler) http.Handler {
 	)
 }
 
-// clientUniqueIDMiddleware is a middleware that sets a unique client ID as a cookie if it's provided in the request header.
-// If the unique client ID is not in the header but present as a cookie, it adds the ID to the request context.
+// clientUniqueIDMiddleware stores the client id as a cookie when it arrives via header.
+// For headerless requests such as EventSource, it also accepts the same value via query string
+// before falling back to the shared cookie.
 func clientUniqueIDMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		clientUniqueId := r.Header.Get(consts.UIClientUniqueIDHeader)
 
+		if clientUniqueId == "" {
+			clientUniqueId = r.URL.Query().Get(consts.UIClientUniqueIDHeader)
+		}
+
 		// If clientUniqueId is found in the header, set it as a cookie
 		if clientUniqueId != "" {
-			c := &http.Cookie{
-				Name:     consts.UIClientUniqueIDHeader,
-				Value:    clientUniqueId,
-				MaxAge:   consts.CookieExpiry,
-				HttpOnly: true,
-				Secure:   true,
-				SameSite: http.SameSiteStrictMode,
-				Path:     cmp.Or(conf.Server.BasePath, "/"),
+			if r.Header.Get(consts.UIClientUniqueIDHeader) != "" {
+				c := &http.Cookie{
+					Name:     consts.UIClientUniqueIDHeader,
+					Value:    clientUniqueId,
+					MaxAge:   consts.CookieExpiry,
+					HttpOnly: true,
+					Secure:   true,
+					SameSite: http.SameSiteStrictMode,
+					Path:     cmp.Or(conf.Server.BasePath, "/"),
+				}
+				http.SetCookie(w, c)
 			}
-			http.SetCookie(w, c)
 		} else {
 			// If clientUniqueId is not found in the header, check if it's present as a cookie
 			c, err := r.Cookie(consts.UIClientUniqueIDHeader)

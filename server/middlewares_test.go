@@ -201,6 +201,27 @@ var _ = Describe("middlewares", func() {
 		})
 
 		Context("when the request header does not have the unique client ID", func() {
+			Context("when the request has the unique client ID in the query string", func() {
+				BeforeEach(func() {
+					query := url.Values{}
+					query.Set(consts.UIClientUniqueIDHeader, "query-123456")
+					req.URL.RawQuery = query.Encode()
+					req.AddCookie(&http.Cookie{
+						Name:  consts.UIClientUniqueIDHeader,
+						Value: "cookie-123456",
+					})
+				})
+
+				It("prefers the query string client id and does not rewrite the cookie", func() {
+					middleware.ServeHTTP(rec, req)
+
+					Expect(rec.Result().Cookies()).To(HaveLen(0))
+
+					clientUniqueId, _ := request.ClientUniqueIdFrom(nextReq.Context())
+					Expect(clientUniqueId).To(Equal("query-123456"))
+				})
+			})
+
 			Context("when the request has the unique client ID in a cookie", func() {
 				BeforeEach(func() {
 					req.AddCookie(&http.Cookie{
